@@ -8,6 +8,7 @@
 #include "led.h"
 #include "oled.h"
 #include "rfm95.h"
+#include "version.h"
 
 #include "soc/soc.h"
 #ifndef CONFIG_IDF_TARGET_ESP32C6
@@ -31,7 +32,7 @@ void app_main(void) {
 
 	// Increase NimBLE verbosity to help diagnose disconnects
 	esp_log_level_set("NimBLE", ESP_LOG_ERROR);
-	ESP_LOGI(TAG, "%s", SUBG_RFSPY_VERSION);
+	ESP_LOGI(TAG, "%s (build %s)", SUBG_RFSPY_VERSION, FW_GIT_SHA);
 	
 	// Initialize NVS flash first (required for LED mode and BLE)
 	// Recover from corrupted or full NVS (e.g. power loss during write):
