@@ -30,6 +30,32 @@ RileyLink-совместимая прошивка для ESP32 Heltec WiFi LoRa 
 | LORA_DIO2 | 32 |
 | BATTERY_ADC | 37 |
 
+### TTGO LoRa32 V1.6.1 (T3, SX1276 на плате)
+
+- **MCU:** ESP32 Xtensa LX6 dual-core
+- **Радио:** SX1276 в режиме OOK @ 868.25 МГц (встроен, отдельный RFM95 не нужен)
+- **Питание:** разъём JST 1.25мм для LiPo + зарядка TP4054
+
+| Функция | GPIO |
+|---------|------|
+| LED | 25 |
+| Кнопка | 0 |
+| LORA_SCK | 5 |
+| LORA_MOSI | 27 |
+| LORA_MISO | 19 |
+| LORA_CS | 18 |
+| LORA_RST | **23** |
+| LORA_DIO0 | 26 |
+| LORA_DIO1 | 33 |
+| LORA_DIO2 | 32 |
+| BATTERY_ADC | 35 (делитель 100k/100k) |
+| OLED_SDA / SCL | 21 / 22 |
+
+Для сборки под TTGO раскомментируйте в `include/module.h`:
+```c
+#define BOARD_TTGO_LORA32_V161
+```
+
 ### ESP32-C6 Super Mini + RFM95 (альтернатива)
 
 - **MCU:** ESP32-C6 RISC-V single-core @ 160 MHz
@@ -60,7 +86,36 @@ idf.py build
 - **Python:** 3.8+
 - **CMake:** 3.16+
 
-## Установка
+## Готовая прошивка из GitHub Actions (без установки ESP-IDF)
+
+В репозитории настроена сборка прошивки в облаке (`.github/workflows/firmware.yml`).
+На выходе — единый файл `rileylink-ttgo.bin`, содержащий bootloader + partition table + приложение.
+
+### Разовая настройка
+
+1. **Settings → Secrets and variables → Actions → New repository secret**:
+   - `PUMP_ID` — серийный номер вашей помпы (например `123456`)
+   - `PUMP_FREQUENCY` — частота (опционально, по умолчанию `868250000`)
+2. Запустить сборку: **Actions → firmware → Run workflow** — готовый `.bin` появится
+   в артефактах сборки. Либо поставить тег для полноценного релиза:
+   ```bash
+   git tag v0.1 && git push origin v0.1
+   ```
+   Файл появится на странице **Releases**.
+
+### Прошивка платы (2 команды)
+
+```bash
+pip install esptool
+esptool.py --port /dev/ttyUSB0 write_flash 0x0 rileylink-ttgo.bin
+```
+
+- Порт уточните: `ls /dev/ttyUSB* /dev/ttyACM*` (Linux), `ls /dev/cu.usbserial-*` (macOS),
+  `COMx` в Windows.
+- Если прошивка не стартует — зажмите кнопку **BOOT** на плате при запуске esptool.
+- **Перед включением прикрутите антенну 868 МГц!**
+
+## Установка (сборка из исходников)
 
 ### 1. Установка ESP-IDF
 
