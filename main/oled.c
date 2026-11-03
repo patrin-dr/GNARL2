@@ -166,7 +166,7 @@ static void oled_draw_status(void) {
 		if (age_s > 9999) {
 			snprintf(buf, sizeof(buf), "Pump %ddBm  old", last_pump_rssi);
 		} else {
-			snprintf(buf, sizeof(buf), "Pump %ddBm %lds", last_pump_rssi, (unsigned long)age_s);
+			snprintf(buf, sizeof(buf), "Pump %ddBm %lus", last_pump_rssi, (unsigned long)age_s);
 		}
 	}
 	oled_text(0, 4, buf);
@@ -189,7 +189,8 @@ static void oled_draw_status(void) {
 
 	// Line 7: uptime
 	uint32_t up = (uint32_t)(esp_timer_get_time() / 1000000);
-	snprintf(buf, sizeof(buf), "Up %02d:%02d:%02d", up / 3600, (up / 60) % 60, up % 60);
+	snprintf(buf, sizeof(buf), "Up %02lu:%02lu:%02lu",
+		 (unsigned long)(up / 3600), (unsigned long)((up / 60) % 60), (unsigned long)(up % 60));
 	oled_text(0, 7, buf);
 
 	oled_flush();
