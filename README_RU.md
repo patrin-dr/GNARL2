@@ -1,7 +1,8 @@
 # ESP32 + RFM95 GNARL Прошивка
 
-RileyLink-совместимая прошивка для ESP32 Heltec WiFi LoRa 32 V2 с радиомодулем RFM95.
-Реализует протокол RFSpy/GNARL для связи с инсулиновыми помпами Medtronic через iAPS/Loop/AndroidAPS.
+RileyLink-совместимая прошивка для **TTGO LoRa32 V1.6.1** (плата по умолчанию в этом форке)
+с радиомодулем SX1276. Реализует протокол RFSpy/GNARL для связи с инсулиновыми помпами
+Medtronic через iAPS/Loop/AndroidAPS. Поддерживаются также Heltec WiFi LoRa 32 V2 и ESP32-C6.
 
 ## Благодарности
 
@@ -11,26 +12,7 @@ RileyLink-совместимая прошивка для ESP32 Heltec WiFi LoRa 
 
 ## Поддерживаемое оборудование
 
-### ESP32 Heltec WiFi LoRa 32 V2 (по умолчанию)
-
-- **MCU:** ESP32 Xtensa LX6 dual-core @ 80 MHz
-- **Радио:** RFM95 (SX1276) в режиме OOK @ 868.25 МГц
-- **BLE:** NimBLE стек
-
-| Функция | GPIO |
-|---------|------|
-| LED | 25 |
-| Кнопка | 0 |
-| LORA_SCK | 5 |
-| LORA_MOSI | 27 |
-| LORA_MISO | 19 |
-| LORA_CS | 18 |
-| LORA_RST | 14 |
-| LORA_DIO0 | 26 |
-| LORA_DIO2 | 32 |
-| BATTERY_ADC | 37 |
-
-### TTGO LoRa32 V1.6.1 (T3, SX1276 на плате)
+### TTGO LoRa32 V1.6.1 (T3, SX1276 на плате) — по умолчанию
 
 - **MCU:** ESP32 Xtensa LX6 dual-core
 - **Радио:** SX1276 в режиме OOK @ 868.25 МГц (встроен, отдельный RFM95 не нужен)
@@ -51,10 +33,27 @@ RileyLink-совместимая прошивка для ESP32 Heltec WiFi LoRa 
 | BATTERY_ADC | 35 (делитель 100k/100k) |
 | OLED_SDA / SCL | 21 / 22 |
 
-Для сборки под TTGO раскомментируйте в `include/module.h`:
-```c
-#define BOARD_TTGO_LORA32_V161
-```
+Плата TTGO выбрана по умолчанию в `include/module.h` (`#define BOARD_TTGO_LORA32_V161`).
+Для сборки под Heltec V2 закомментируйте эту строку.
+
+### ESP32 Heltec WiFi LoRa 32 V2 (альтернатива)
+
+- **MCU:** ESP32 Xtensa LX6 dual-core @ 80 MHz
+- **Радио:** RFM95 (SX1276) в режиме OOK @ 868.25 МГц
+- **BLE:** NimBLE стек
+
+| Функция | GPIO |
+|---------|------|
+| LED | 25 |
+| Кнопка | 0 |
+| LORA_SCK | 5 |
+| LORA_MOSI | 27 |
+| LORA_MISO | 19 |
+| LORA_CS | 18 |
+| LORA_RST | 14 |
+| LORA_DIO0 | 26 |
+| LORA_DIO2 | 32 |
+| BATTERY_ADC | 37 |
 
 ### ESP32-C6 Super Mini + RFM95 (альтернатива)
 
@@ -133,20 +132,25 @@ alias get_idf='. ~/esp/esp-idf/export.sh'
 
 ### 2. Настройка параметров помпы
 
-Создать `include/pump_config.h`:
+В репозитории лежит `include/pump_config.h` с плейсхолдером (`PUMP_ID "000000"`).
+При сборке через GitHub Actions файл автоматически перезаписывается из
+workflow input `pump_id` или секрета `PUMP_ID` — менять его руками не нужно.
+
+Для локальной сборки отредактируйте `include/pump_config.h`:
 
 ```c
-#ifndef _PUMP_CONFIG_H
-#define _PUMP_CONFIG_H
+#ifndef PUMP_CONFIG_H
+#define PUMP_CONFIG_H
 
 #define PUMP_ID         "123456"      // Серийный номер помпы
 #define PUMP_FREQUENCY  868250000     // Рабочая частота (Гц)
-#define MMTUNE_START    868150000     // Начальная частота mmtune
 
 #endif
 ```
 
-**Никогда не коммитьте pump_config.h в git!**
+**Не коммитьте реальный серийный номер помпы в git** — оставляйте в репозитории
+только плейсхолдер `000000`. Если случайно закоммитили — смените его обратно
+на плейсхолдер и считайте старый коммит скомпрометированным (номер остаётся в истории).
 
 ### 3. Сборка и прошивка
 
@@ -191,8 +195,8 @@ idf.py build
 // Имя BLE устройства (макс. 8 символов)
 #define BLE_NAME        "MYGN"
 
-// Light sleep при отключённом BLE
-#define BLE_SLEEP
+// Light sleep при отключённом BLE (раскомментировать для включения)
+// #define BLE_SLEEP
 ```
 
 ### Энергосбережение (`sdkconfig.defaults`)
@@ -200,6 +204,21 @@ idf.py build
 - Tickless idle для автоматического light sleep
 - Параметры BLE оптимизированы для экономии энергии
 - Уровень логирования — только ERROR
+
+## OLED-экран (TTGO)
+
+На бортовой SSD1306 128×64 каждую секунду выводится статус:
+
+```
+MYGN     BLE:CONN     <- имя + состояние BLE
+------------------
+Batt 4.02V     87%    <- батарея
+Freq 868.250 MHz      <- частота радио
+Pump -78dBm 5s        <- RSSI помпы + время последнего ответа
+Pump 123456           <- серийник помпы из прошивки
+Link 98% ok           <- доля успешных приёмов
+Up 02:34:17           <- аптайм
+```
 
 ## Использование
 
@@ -216,9 +235,12 @@ idf.py build
 - Проверьте serial монитор на ошибки
 
 ### Помпа не отвечает
-- Проверьте `PUMP_ID` в pump_config.h
+- Проверьте, что при сборке workflow был указан правильный `pump_id`
+  (input при запуске или secret `PUMP_ID`); на OLED-экране строка `Pump …` показывает
+  серийник, зашитый в прошивку
 - Проверьте частоту (обычно 868250000 Гц для EU)
 - Убедитесь что помпа в зоне досягаемости (~1-2 метра)
+- Смотрите строку `Pump -XXdBm Ns` на экране: RSSI и время последнего ответа помпы
 
 ### Watchdog timeout
 - Проверьте `CONFIG_ESP_TASK_WDT_TIMEOUT_S=30` в sdkconfig.defaults
@@ -232,10 +254,11 @@ idf.py build
 | `main/gnarl.c` | Обработчик протокола RFSpy |
 | `main/ble.c` | NimBLE GATT сервисы |
 | `main/adc.c` | Мониторинг батареи |
+| `main/oled.c` | Драйвер SSD1306 и экран статуса |
 | `components/radio/rfm95.c` | Драйвер RFM95 |
 | `components/medtronic/` | Протокол Medtronic |
-| `include/module.h` | GPIO пины, опции отладки |
-| `include/pump_config.h` | Настройки помпы (приватный) |
+| `include/module.h` | GPIO пины, выбор платы (TTGO по умолчанию) |
+| `include/pump_config.h` | Настройки помпы (плейсхолдер; реальный ID задаётся в CI) |
 
 ## Лицензия
 
