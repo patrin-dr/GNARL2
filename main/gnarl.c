@@ -245,6 +245,7 @@ volatile uint32_t radio_tx_count = 0;
 volatile uint32_t radio_rx_count = 0;
 volatile uint32_t radio_rx_timeout_count = 0;
 volatile int last_pump_rssi = 0;          // dBm of last received pump packet
+volatile int last_pump_rssi_avg = 0;      // exponential moving average of pump RSSI
 volatile int64_t last_pump_rx_us = 0;     // time of last pump RX (0 = never)
 
 // Activity indicator functions - send events to LED task (non-blocking)
@@ -538,6 +539,8 @@ static void rx_common(int n, int rssi) {
 	}
 	print_bytes("RX: received %d bytes:", rx_buf.packet, n);
 	last_pump_rssi = rssi;
+	// EMA with alpha=1/4: smooths single-packet RSSI spikes (~4 samples to converge)
+	last_pump_rssi_avg = last_pump_rssi_avg == 0 ? rssi : (last_pump_rssi_avg * 3 + rssi) / 4;
 	last_pump_rx_us = esp_timer_get_time();
 	led_indicate_radio_rx();
 	send_bytes((uint8_t *)&rx_buf, 2 + n);
