@@ -158,21 +158,32 @@ static void oled_draw_status(void) {
 		 (unsigned long)(f / 1000000), (unsigned long)((f % 1000000) / 1000));
 	oled_text(0, 3, buf);
 
-	// Line 4: packet counters
-	snprintf(buf, sizeof(buf), "TX %-6lu RX %-6lu",
-		 (unsigned long)radio_tx_count, (unsigned long)radio_rx_count);
+	// Line 4: pump link - RSSI + seconds since last pump response
+	if (last_pump_rx_us == 0) {
+		snprintf(buf, sizeof(buf), "Pump --- no data");
+	} else {
+		uint32_t age_s = (uint32_t)((esp_timer_get_time() - last_pump_rx_us) / 1000000);
+		if (age_s > 9999) {
+			snprintf(buf, sizeof(buf), "Pump %ddBm  old", last_pump_rssi);
+		} else {
+			snprintf(buf, sizeof(buf), "Pump %ddBm %lds", last_pump_rssi, (unsigned long)age_s);
+		}
+	}
 	oled_text(0, 4, buf);
 
 	// Line 5: pump serial
 	snprintf(buf, sizeof(buf), "Pump %s", PUMP_ID);
 	oled_text(0, 5, buf);
 
-	// Line 6: BLE RSSI
-	int8_t rssi = ble_get_rssi();
-	if (rssi == 127) {
-		snprintf(buf, sizeof(buf), "RSSI --- dBm");
-	} else {
-		snprintf(buf, sizeof(buf), "RSSI %d dBm", rssi);
+	// Line 6: link quality - percent of successful RX vs timeouts
+	{
+		uint32_t rx_ok = radio_rx_count;
+		uint32_t total = rx_ok + radio_rx_timeout_count;
+		if (total == 0) {
+			snprintf(buf, sizeof(buf), "Link ---");
+		} else {
+			snprintf(buf, sizeof(buf), "Link %lu%% ok", (unsigned long)(rx_ok * 100 / total));
+		}
 	}
 	oled_text(0, 6, buf);
 

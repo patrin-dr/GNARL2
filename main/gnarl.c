@@ -243,6 +243,9 @@ static QueueHandle_t led_queue = NULL;
 // Radio packet counters (shown on OLED / diagnostics)
 volatile uint32_t radio_tx_count = 0;
 volatile uint32_t radio_rx_count = 0;
+volatile uint32_t radio_rx_timeout_count = 0;
+volatile int last_pump_rssi = 0;          // dBm of last received pump packet
+volatile int64_t last_pump_rx_us = 0;     // time of last pump RX (0 = never)
 
 // Activity indicator functions - send events to LED task (non-blocking)
 void led_indicate_radio_tx(void) {
@@ -474,6 +477,7 @@ static uint8_t raw_rssi(int rssi) {
 
 static void rx_common(int n, int rssi) {
 	if (n == 0) {
+		radio_rx_timeout_count++;
 		ESP_LOGD(TAG, "RX: timeout");
 		send_code(RESPONSE_CODE_RX_TIMEOUT);
 		return;
@@ -533,6 +537,8 @@ static void rx_common(int n, int rssi) {
 		return;
 	}
 	print_bytes("RX: received %d bytes:", rx_buf.packet, n);
+	last_pump_rssi = rssi;
+	last_pump_rx_us = esp_timer_get_time();
 	led_indicate_radio_rx();
 	send_bytes((uint8_t *)&rx_buf, 2 + n);
 }

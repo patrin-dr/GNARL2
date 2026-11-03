@@ -28,3 +28,6 @@ int8_t ble_get_rssi(void);  // 127 when not connected
 // Radio packet counters (incremented in led_indicate_radio_tx/rx)
 extern volatile uint32_t radio_tx_count;
 extern volatile uint32_t radio_rx_count;
+extern volatile uint32_t radio_rx_timeout_count;
+extern volatile int last_pump_rssi;        // dBm of last received pump packet
+extern volatile int64_t last_pump_rx_us;   // time of last pump RX (0 = never)
