@@ -18,6 +18,12 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+    paths-ignore: ["**.md"]
+
+# Отменяем устаревший запуск при новом пуше в ту же ветку/тег
+concurrency:
+  group: firmware-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -25,8 +31,18 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+
+      # Штамп версии: подставляем короткий SHA коммита в version.h,
+      # чтобы на плате/в логе была видна точная сборка
+      - name: Stamp build version
+        shell: bash
+        run: |
+          SHA="${GITHUB_SHA::7}"
+          sed -i "s|^#define FW_GIT_SHA[[:space:]].*|#define FW_GIT_SHA \"$SHA\"|" main/version.h
+          grep FW_GIT_SHA main/version.h
 
       # Если задан секрет PUMP_ID — генерируем pump_config.h из секретов,
       # иначе берём файл из репозитория (для тестовых сборок).
@@ -37,6 +53,11 @@ jobs:
           PUMP_FREQUENCY: ${{ inputs.pump_frequency || secrets.PUMP_FREQUENCY }}
         run: |
           if [ -n "$PUMP_ID" ]; then
+            # Серийник Medtronic — ровно 6 цифр; ошибку ловим до сборки, а не на железе
+            if ! [[ "$PUMP_ID" =~ ^[0-9]{6}$ ]]; then
+              echo "::error::PUMP_ID must be exactly 6 digits, got: '$PUMP_ID'"
+              exit 1
+            fi
             echo "::add-mask::$PUMP_ID"
             printf '#ifndef PUMP_CONFIG_H\n#define PUMP_CONFIG_H\n\n#define PUMP_ID\t\t"%s"\t// pump serial number\n#define PUMP_FREQUENCY\t%s\t// working pump frequency\n\n#endif\n' \
               "$PUMP_ID" "${PUMP_FREQUENCY:-868250000}" > include/pump_config.h
@@ -71,6 +92,7 @@ jobs:
         with:
           name: rileylink-ttgo
           path: build/rileylink-ttgo.bin
+          retention-days: 30
 
       # Релиз создаётся при пуше тега вида v* (например v0.1)
       - name: Publish release
