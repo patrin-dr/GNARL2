@@ -34,7 +34,15 @@ void app_main(void) {
 	ESP_LOGI(TAG, "%s", SUBG_RFSPY_VERSION);
 	
 	// Initialize NVS flash first (required for LED mode and BLE)
-	ESP_ERROR_CHECK(nvs_flash_init());
+	// Recover from corrupted or full NVS (e.g. power loss during write):
+	// erase and retry once instead of aborting on every boot.
+	esp_err_t nvs_err = nvs_flash_init();
+	if (nvs_err == ESP_ERR_NVS_NO_FREE_PAGES || nvs_err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+		ESP_LOGW(TAG, "NVS corrupted (%s), erasing and reinitializing", esp_err_to_name(nvs_err));
+		ESP_ERROR_CHECK(nvs_flash_erase());
+		nvs_err = nvs_flash_init();
+	}
+	ESP_ERROR_CHECK(nvs_err);
 
 	// Initialize GPIO ISR service (required for radio interrupt handling)
 	// Must be called once before rfm95_init()
