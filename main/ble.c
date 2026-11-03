@@ -239,6 +239,11 @@ static void advertise(void) {
 	memset(&adv, 0, sizeof(adv));
 	adv.conn_mode = BLE_GAP_CONN_MODE_UND;
 	adv.disc_mode = BLE_GAP_DISC_MODE_GEN;
+	// Advertising interval 500-800ms (units of 0.625ms) instead of stack
+	// default fast ~30-60ms: device is discovered once and then stays
+	// connected, so slow advertising saves radio TX power while idle.
+	adv.itvl_min = 800;   // 500ms
+	adv.itvl_max = 1280;  // 800ms
 
 	// Retry advertising start up to 3 times
 	for (int retry = 0; retry < 3; retry++) {
