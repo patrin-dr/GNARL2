@@ -63,7 +63,8 @@
     // OLED I2C (optional). V1.6.1 has no OLED reset pin.
     #define OLED_SDA        GPIO_NUM_21
     #define OLED_SCL        GPIO_NUM_22
-    // #define OLED_ENABLE              // Uncomment to enable OLED
+    #define OLED_ENABLE                // SSD1306 128x64 @ 0x3C onboard
+    #define OLED_ADDR       0x3C
 
     // SPI for onboard SX1276 (same as Heltec V2)
     #define LORA_SCK        GPIO_NUM_5

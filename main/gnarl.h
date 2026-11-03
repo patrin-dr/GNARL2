@@ -23,3 +23,8 @@ void send_bytes(const uint8_t *buf, int count);
 void print_bytes(const char* msg, const uint8_t *buf, int count);
 bool ble_is_connected(void);
 bool ble_is_ready(void);  // Returns true after NimBLE fully initialized
+int8_t ble_get_rssi(void);  // 127 when not connected
+
+// Radio packet counters (incremented in led_indicate_radio_tx/rx)
+extern volatile uint32_t radio_tx_count;
+extern volatile uint32_t radio_rx_count;

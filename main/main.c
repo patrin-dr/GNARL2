@@ -6,6 +6,7 @@
 #include <nvs_flash.h>
 #include "adc.h"
 #include "led.h"
+#include "oled.h"
 #include "rfm95.h"
 
 #include "soc/soc.h"
@@ -63,5 +64,6 @@ void app_main(void) {
 	ESP_LOGD(TAG, "frequency set to %lu Hz", (unsigned long)read_frequency());
 	
 	adc_init();
+	oled_init();
 	gnarl_init();
 }

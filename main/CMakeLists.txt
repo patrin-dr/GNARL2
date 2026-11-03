@@ -3,6 +3,7 @@ idf_component_register(
          "gnarl.c"
          "ble.c"
          "adc.c"
+         "oled.c"
     INCLUDE_DIRS "../include"
                  "."
     REQUIRES radio medtronic esp_timer nvs_flash bt driver esp_adc led_strip esp_driver_uart
