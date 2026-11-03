@@ -13,6 +13,10 @@
 // Uncomment to enable light sleep mode
 // #define BLE_SLEEP
 
+// Board selection (for classic ESP32 boards only; ESP32-C6 is auto-detected).
+// Uncomment exactly ONE line if your board is not the default Heltec V2:
+// #define BOARD_TTGO_LORA32_V161      // TTGO / LilyGo T3 LoRa32 V1.6.1 (868 MHz)
+
 #ifdef CONFIG_IDF_TARGET_ESP32C6
     //=========================================================================
     // ESP32-C6 Super Mini + RFM95
@@ -46,6 +50,39 @@
     // VBAT voltage divider (kΩ): 1MΩ + 1MΩ
     #define VDIV_R1_KOHM    1000
     #define VDIV_R2_KOHM    1000
+
+#elif defined(BOARD_TTGO_LORA32_V161)
+    //=========================================================================
+    // TTGO / LilyGo T3 LoRa32 V1.6.1 (868 MHz, SX1276 onboard)
+    //=========================================================================
+
+    #define BUTTON          GPIO_NUM_0
+    #define LED             GPIO_NUM_25
+    // #define LED_IS_WS2812            // Standard GPIO LED
+
+    // OLED I2C (optional). V1.6.1 has no OLED reset pin.
+    #define OLED_SDA        GPIO_NUM_21
+    #define OLED_SCL        GPIO_NUM_22
+    // #define OLED_ENABLE              // Uncomment to enable OLED
+
+    // SPI for onboard SX1276 (same as Heltec V2)
+    #define LORA_SCK        GPIO_NUM_5
+    #define LORA_MOSI       GPIO_NUM_27
+    #define LORA_MISO       GPIO_NUM_19
+    #define LORA_CS         GPIO_NUM_18
+    #define LORA_RST        GPIO_NUM_23    // differs from Heltec V2 (GPIO14)!
+
+    // SX1276 DIO pins
+    #define LORA_DIO0       GPIO_NUM_26
+    #define LORA_DIO1       GPIO_NUM_33
+    #define LORA_DIO2       GPIO_NUM_32
+
+    // Battery sense ADC pin (divider is always connected, no enable pin)
+    #define BATTERY_ADC     GPIO_NUM_35
+
+    // VBAT voltage divider (kΩ): 100k/100k => VBAT = ADC × 2.0
+    #define VDIV_R1_KOHM    100
+    #define VDIV_R2_KOHM    100
 
 #else
     //=========================================================================
