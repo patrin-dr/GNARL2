@@ -2,6 +2,15 @@ name: firmware
 
 on:
   workflow_dispatch:
+    inputs:
+      pump_id:
+        description: "Серийный номер помпы (переопределяет secret PUMP_ID)"
+        required: false
+        type: string
+      pump_frequency:
+        description: "Частота помпы в Гц (по умолчанию 868250000)"
+        required: false
+        type: string
   push:
     tags: ["v*"]
 
@@ -19,15 +28,16 @@ jobs:
       - name: Configure pump settings
         shell: bash
         env:
-          PUMP_ID: ${{ secrets.PUMP_ID }}
-          PUMP_FREQUENCY: ${{ secrets.PUMP_FREQUENCY }}
+          PUMP_ID: ${{ inputs.pump_id || secrets.PUMP_ID }}
+          PUMP_FREQUENCY: ${{ inputs.pump_frequency || secrets.PUMP_FREQUENCY }}
         run: |
           if [ -n "$PUMP_ID" ]; then
+            echo "::add-mask::$PUMP_ID"
             printf '#ifndef PUMP_CONFIG_H\n#define PUMP_CONFIG_H\n\n#define PUMP_ID\t\t"%s"\t// pump serial number\n#define PUMP_FREQUENCY\t%s\t// working pump frequency\n\n#endif\n' \
               "$PUMP_ID" "${PUMP_FREQUENCY:-868250000}" > include/pump_config.h
-            echo "pump_config.h generated from secrets (PUMP_ID=${PUMP_ID})"
+            echo "pump_config.h generated (source: workflow input or secrets)"
           else
-            echo "::warning::secrets.PUMP_ID not set — using pump_config.h from the repo"
+            echo "::warning::PUMP_ID not set — using pump_config.h from the repo"
           fi
 
       # Выбор платы: TTGO LoRa32 V1.6.1
