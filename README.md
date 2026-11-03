@@ -1,21 +1,58 @@
-# ESP32 + RFM95 GNARL Firmware
+# RileyLink 2.0 — ESP32 + RFM95 GNARL Firmware
 
-RileyLink-compatible firmware for ESP32 Heltec WiFi LoRa 32 V2 with RFM95 radio module.
-Implements RFSpy/GNARL protocol for communication with Medtronic insulin pumps via iAPS/Loop/AndroidAPS.
+RileyLink-compatible firmware for **TTGO LoRa32 V1.6.1** (868 MHz, onboard SX1276).
+Implements the RFSpy/GNARL protocol for communication with Medtronic insulin pumps
+via iAPS / Loop / AndroidAPS. Heltec WiFi LoRa 32 V2 and ESP32-C6 + RFM95 are
+supported as alternative targets.
+
+**Русская версия: [README_RU.md](README_RU.md)**
 
 ## Credits
 
 This project uses code from:
-- [GNARL](https://github.com/ecc1/gnarl/) - original GNARL implementation
-- [Pickle](https://github.com/d3xr/pickle/) - ESP32 port
+- [GNARL](https://github.com/ecc1/gnarl/) — original GNARL implementation
+- [Pickle](https://github.com/d3xr/pickle/) — ESP32 port
+
+## Fork highlights
+
+- **TTGO LoRa32 V1.6.1 as the default board** (selected in `include/module.h`)
+- **GitHub Actions CI** producing a single flashable `.bin` (bootloader + partition
+  table + app); pump ID is injected at build time from workflow input or a secret —
+  the real serial number is never committed
+- **OLED status screen** (onboard SSD1306): battery, frequency, pump RSSI, link
+  quality, uptime; BOOT button controls power and 180° flip (persisted in NVS)
+- **Power optimizations:** CPU @ 80 MHz, tickless idle, BLE light-sleep when
+  disconnected, slow BLE advertising (500–800 ms) when idle, OLED screensaver
+- **Robustness:** NVS corruption auto-recovery, full radio reconfiguration after
+  hardware-reset recovery, battery deep-sleep protection at 3.3 V
 
 ## Supported Hardware
 
-### ESP32 Heltec WiFi LoRa 32 V2 (default)
+### TTGO LoRa32 V1.6.1 (default, SX1276 onboard)
 
 - **MCU:** ESP32 Xtensa LX6 dual-core @ 80 MHz
-- **Radio:** RFM95 (SX1276) in OOK mode @ 868.25 MHz
-- **BLE:** NimBLE stack
+- **Radio:** SX1276 in OOK mode @ 868.25 MHz (onboard, no separate RFM95 needed)
+- **Flash:** 4 MB
+- **Power:** JST 1.25 mm LiPo connector + TP4054 charger
+
+| Function | GPIO |
+|----------|------|
+| LED | 25 |
+| Button (BOOT) | 0 |
+| LORA_SCK | 5 |
+| LORA_MOSI | 27 |
+| LORA_MISO | 19 |
+| LORA_CS | 18 |
+| LORA_RST | **23** |
+| LORA_DIO0 | 26 |
+| LORA_DIO1 | 33 |
+| LORA_DIO2 | 32 |
+| BATTERY_ADC | 35 (100k/100k divider) |
+| OLED SDA / SCL | 21 / 22 |
+
+### ESP32 Heltec WiFi LoRa 32 V2 (alternative)
+
+Comment out `#define BOARD_TTGO_LORA32_V161` in `include/module.h`.
 
 | Function | GPIO |
 |----------|------|
@@ -33,7 +70,6 @@ This project uses code from:
 ### ESP32-C6 Super Mini + RFM95 (alternative)
 
 - **MCU:** ESP32-C6 RISC-V single-core @ 160 MHz
-- **Radio:** RFM95 (SX1276) in OOK mode @ 868.25 MHz
 - **LED:** WS2812 RGB
 
 | Function | GPIO |
@@ -48,122 +84,139 @@ This project uses code from:
 | LORA_DIO2 | 14 |
 | BATTERY_ADC | 0 |
 
-To build for ESP32-C6:
 ```bash
 idf.py set-target esp32c6
 idf.py build
 ```
 
-## Requirements
+## Prebuilt Firmware via GitHub Actions (no ESP-IDF needed)
 
-- **ESP-IDF:** v5.2+ (tested with v5.4.1)
-- **Python:** 3.8+
-- **CMake:** 3.16+
+The workflow (`.github/workflows/firmware.yml`) builds a single
+`rileylink-ttgo.bin` (flash at offset `0x0`). Builds run automatically on every
+push to `main`, manually with parameters, and publish a release on `v*` tags.
 
-## Setup
+### One-time setup
+
+1. **Settings → Secrets and variables → Actions → New repository secret**:
+   - `PUMP_ID` — your pump serial (6 digits)
+   - `PUMP_FREQUENCY` — optional, defaults to `868250000`
+2. Run **Actions → firmware → Run workflow** (optionally overriding `pump_id`,
+   `pump_frequency`, `ble_name`) — the `.bin` appears in the run artifacts.
+   Or push a tag for a release:
+   ```bash
+   git tag v0.1 && git push origin v0.1
+   ```
+
+`pump_id` is validated (exactly 6 digits) before the build starts, and the commit
+SHA is stamped into the firmware (`FW_GIT_SHA`) and printed in the boot log.
+
+### Flashing
+
+```bash
+pip install esptool
+esptool.py --port /dev/ttyUSB0 write_flash 0x0 rileylink-ttgo.bin
+```
+
+- Find the port: `ls /dev/ttyUSB* /dev/ttyACM*` (Linux), `ls /dev/cu.usbserial-*`
+  (macOS), `COMx` (Windows — CH9102 driver may be required).
+- If flashing fails to start, hold the **BOOT** button while running esptool.
+- **Attach the 868 MHz antenna before powering on!**
+
+## Building from Source
 
 ### 1. Install ESP-IDF
 
 ```bash
-# Clone ESP-IDF
 git clone -b v5.4.1 --recursive https://github.com/espressif/esp-idf.git ~/esp/esp-idf
-
-# Install tools
 cd ~/esp/esp-idf
 ./install.sh esp32
-
-# Add to shell (add to ~/.bashrc or ~/.zshrc)
-alias get_idf='. ~/esp/esp-idf/export.sh'
+alias get_idf='. ~/esp/esp-idf/export.sh'   # add to ~/.bashrc or ~/.zshrc
 ```
 
-### 2. Configure Pump Settings
+### 2. Pump settings
 
-Create `include/pump_config.h`:
+The repo contains `include/pump_config.h` with a placeholder (`PUMP_ID "000000"`).
+For CI builds the file is overwritten from the workflow input / secret.
+For local builds, edit it:
 
 ```c
-#ifndef _PUMP_CONFIG_H
-#define _PUMP_CONFIG_H
+#ifndef PUMP_CONFIG_H
+#define PUMP_CONFIG_H
 
-#define PUMP_ID         "123456"      // Your pump serial number
+#define PUMP_ID         "123456"      // Pump serial number
 #define PUMP_FREQUENCY  868250000     // Working frequency (Hz)
-#define MMTUNE_START    868150000     // mmtune scan start frequency
 
 #endif
 ```
 
-**Never commit pump_config.h to git!**
+**Never commit the real pump serial** — keep the `000000` placeholder in the repo.
 
-### 3. Build & Flash
+### 3. Build & flash
 
 ```bash
-# Activate ESP-IDF environment
 get_idf
-
-# Navigate to project
-cd esp32rfm95
-
-# Build
 idf.py build
-
-# Flash (replace port with your device)
-idf.py -p /dev/cu.usbserial-0001 flash
-
-# Monitor serial output
-idf.py -p /dev/cu.usbserial-0001 monitor
-
-# Build + Flash + Monitor
-idf.py -p /dev/cu.usbserial-0001 flash monitor
+idf.py -p /dev/ttyUSB0 flash monitor
 ```
 
-### 4. Clean Build
+After changing `sdkconfig.defaults`: `idf.py fullclean && idf.py build`.
 
-If you change `sdkconfig.defaults`, run:
+## OLED Screen (TTGO)
 
-```bash
-idf.py fullclean
-idf.py build
+The onboard SSD1306 128×64 shows (redrawn every second while BLE-connected,
+every 5 s when idle):
+
+```
+MYGN     BLE:CONN     <- BLE name + state
+------------------
+Batt 4.02V     87%    <- battery
+Freq 868.250 MHz      <- radio frequency
+Pump -78dBm 5s        <- averaged pump RSSI + last response age
+Pump 123456           <- pump serial compiled into firmware
+Link 98% ok           <- successful RX share
+Up 02:34:17           <- uptime
 ```
 
-## Configuration
+Pump RSSI is smoothed with an exponential moving average (~4 packets) — handy for
+finding a good placement for the device.
 
-### Options (`include/module.h`)
+### BOOT button (GPIO0)
 
-```c
-// Debug options (uncomment to enable)
-// #define BLE_DEBUG      // BLE packet hex dump
-// #define RADIO_DEBUG    // Radio TX/RX packet hex dump
+- **Short press** — display on/off
+- **Long press (>1.5 s)** — flip the screen 180° (saved to NVS, survives reboots)
 
-// BLE device name (max 8 characters)
-#define BLE_NAME        "MYGN"
+## Power Management
 
-// Light sleep when BLE disconnected
-#define BLE_SLEEP
-```
-
-### Power Management (`sdkconfig.defaults`)
-
-- Tickless idle enabled for automatic light sleep
-- BLE connection parameters optimized for power saving
-- Logging level set to ERROR only
+- **Tickless idle** (`CONFIG_PM_ENABLE`) — CPU sleeps automatically in idle
+- **BLE_SLEEP** — light sleep (~0.8 mA) while BLE is disconnected, waking every
+  5 s to check for a connection
+- **Slow advertising** — 500–800 ms interval when idle (device is discovered once,
+  then stays connected)
+- **OLED screensaver** — display off after 5 min without BLE connection; wakes on
+  connect or button press
+- **Battery protection** — deep sleep below 3.3 V (brownout detector intentionally
+  disabled to avoid reboot loops on a low battery)
+- CPU @ 80 MHz — more than enough for SPI @ 5 MHz + BLE
 
 ## Usage
 
-1. Flash firmware to device
-2. Open iAPS/Loop/AndroidAPS
-3. Add new RileyLink device (appears as "RileyLink")
-4. Device will auto-connect and sync with pump
+1. Flash the firmware
+2. Open iAPS / Loop / AndroidAPS
+3. Add a new RileyLink device (appears under the configured BLE name)
+4. The device auto-connects and syncs with the pump
 
 ## Troubleshooting
 
-### Device not found in app
-- Check BLE is enabled on phone
+### Device not found in the app
+- Check BLE is enabled on the phone
 - Restart the device
-- Check serial monitor for errors
+- Check the serial monitor for errors (the boot log prints the build SHA)
 
 ### Pump not responding
-- Verify `PUMP_ID` in pump_config.h
-- Check frequency (usually 868250000 Hz for EU)
-- Ensure pump is in range (~1-2 meters)
+- Verify the `pump_id` used at build time — the OLED `Pump …` line shows the
+  compiled-in serial
+- Check the frequency (usually 868250000 Hz for EU pumps)
+- Keep the pump within ~1–2 m; watch `Pump -XXdBm Ns` on the screen
 
 ### Watchdog timeout
 - Check `CONFIG_ESP_TASK_WDT_TIMEOUT_S=30` in sdkconfig.defaults
@@ -173,15 +226,17 @@ idf.py build
 
 | File | Description |
 |------|-------------|
-| `main/main.c` | Entry point, hardware init |
+| `main/main.c` | Entry point, hardware init, NVS recovery |
 | `main/gnarl.c` | RFSpy protocol handler |
 | `main/ble.c` | NimBLE GATT services |
-| `main/adc.c` | Battery monitoring |
-| `components/radio/rfm95.c` | RFM95 driver |
+| `main/adc.c` | Battery monitoring + deep-sleep protection |
+| `main/oled.c` | SSD1306 status screen |
+| `components/radio/rfm95.c` | RFM95/SX1276 driver |
 | `components/medtronic/` | Medtronic protocol |
-| `include/module.h` | GPIO pins, debug options |
-| `include/pump_config.h` | Pump settings (private) |
+| `include/module.h` | GPIO pins, board selection (TTGO by default) |
+| `include/pump_config.h` | Pump settings (placeholder; real ID set via CI) |
+| `.github/workflows/firmware.yml` | CI build & release |
 
 ## License
 
-Based on GNARL project. See LICENSE file.
+Based on the GNARL project. See LICENSE file.
