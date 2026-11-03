@@ -14,8 +14,9 @@
 // #define BLE_SLEEP
 
 // Board selection (for classic ESP32 boards only; ESP32-C6 is auto-detected).
-// Uncomment exactly ONE line if your board is not the default Heltec V2:
-// #define BOARD_TTGO_LORA32_V161      // TTGO / LilyGo T3 LoRa32 V1.6.1 (868 MHz)
+// This fork targets TTGO LoRa32 V1.6.1 by default.
+// Comment the line below to build for the default Heltec V2:
+#define BOARD_TTGO_LORA32_V161      // TTGO / LilyGo T3 LoRa32 V1.6.1 (868 MHz)
 
 #ifdef CONFIG_IDF_TARGET_ESP32C6
     //=========================================================================
@@ -46,8 +47,7 @@
     // Battery sensing enabled on Super Mini with external divider on GPIO0
     // Divider: 1MΩ (R1) + 1MΩ (R2) = 1:1 ratio -> VBAT = ADC * 2.0
     // 1S LiPo: 2.5-4.2V -> ADC sees 1.25-2.1V
-    #define BATTERY_ADC        GPIO_NUM_0
-    // VBAT voltage divider (kΩ): 1MΩ + 1MΩ
+    #define BATTERY_ADC     GPIO_NUM_0
     #define VDIV_R1_KOHM    1000
     #define VDIV_R2_KOHM    1000
 
@@ -112,17 +112,14 @@
     #define LORA_DIO1       GPIO_NUM_33
     #define LORA_DIO2       GPIO_NUM_32
     
-    // Battery sense ADC pin
-    #define BATTERY_ADC             GPIO_NUM_37
-
-    // VBAT sense enable (active LOW)
-    #define BATTERY_SENSE_EN        GPIO_NUM_21
-    #define BATTERY_SENSE_EN_ACTIVE 0
-
-    // VBAT voltage divider (kΩ): ~220k/100k => VBAT ≈ ADC × 3.2
+    // Battery sense: GPIO37 must be LOW to enable divider on GPIO36
+    #define BATTERY_SENSE_EN GPIO_NUM_37
+    #define BATTERY_ADC      GPIO_NUM_36
+    
+    // VBAT voltage divider (kΩ): 220k/100k => VBAT = ADC × 3.2
     #define VDIV_R1_KOHM    220
     #define VDIV_R2_KOHM    100
 
-#endif
+#endif // CONFIG_IDF_TARGET_ESP32C6
 
 #endif // _MODULE_H
