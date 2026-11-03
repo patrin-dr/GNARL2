@@ -304,8 +304,11 @@ static void oled_task(void *arg) {
 			oled_set_power(false);
 		}
 
-		// --- Redraw once per second ---
-		if (display_on && (now - last_draw_us) >= 1000000) {
+		// --- Redraw: every 1s while connected (live RSSI/age), 5s when idle ---
+		// Full flush is ~1 KB over I2C (~23 ms); idle data (battery) changes
+		// only once a minute, so slow redraw saves bus activity and power.
+		int64_t redraw_interval_us = conn ? 1000000 : 5000000;
+		if (display_on && (now - last_draw_us) >= redraw_interval_us) {
 			oled_draw_status();
 			last_draw_us = now;
 		}

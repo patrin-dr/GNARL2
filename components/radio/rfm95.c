@@ -25,6 +25,9 @@
 
 #define MILLISECOND	1000
 
+// Defined below, before rfm95_init(); used by set_mode() recovery.
+static void radio_configure(void);
+
 // The FIFO_THRESHOLD value should allow a maximum-sized packet to be
 // written in two bursts, but be large enough to avoid fifo underflow.
 #define FIFO_THRESHOLD	20
@@ -62,9 +65,12 @@ static void set_mode(uint8_t mode) {
 		ESP_LOGW(TAG, "Diagnostic: REG_OP_MODE=0x%02X, IRQ1=0x%02X, IRQ2=0x%02X", op, irq1, irq2);
 	}
 
-	// Attempt one recovery: hardware reset and retry the mode set
-	ESP_LOGW(TAG, "Attempting recovery: reset and retry set_mode(%d)", mode);
+	// Attempt one recovery: hardware reset and retry the mode set.
+	// NOTE: reset wipes ALL radio registers - full reconfiguration required,
+	// otherwise the radio recovers with power-on defaults (FSK, no sync word).
+	ESP_LOGW(TAG, "Attempting recovery: reset, reconfigure and retry set_mode(%d)", mode);
 	rfm95_reset();
+	radio_configure();
 	write_register(REG_OP_MODE, FSK_OOK_MODE | MODULATION_OOK | mode);
 	vTaskDelay(pdMS_TO_TICKS(10));
 	for (int w = 0; w < (MAX_WAIT/2); w++) {
@@ -135,44 +141,27 @@ static void IRAM_ATTR rx_interrupt(void *unused) {
 }
 #endif
 
-void rfm95_init(void) {
-	spi_init();
-
-	// Hardware reset and quick diagnostic: verify REG_VERSION to confirm SPI comms
-	rfm95_reset();
-	ESP_LOGI(TAG, "Using CS pin: %d", LORA_CS);
-	uint8_t ver = read_register(REG_VERSION);
-	ESP_LOGI(TAG, "RFM95 REG_VERSION = 0x%02X", ver);
-	if (ver == 0x00 || ver == 0xFF) {
-		ESP_LOGW(TAG, "RFM95 appears not responding (REG_VERSION=0x%02X). Trying another reset...", ver);
-		rfm95_reset();
-		vTaskDelay(pdMS_TO_TICKS(100));
-		ver = read_register(REG_VERSION);
-		ESP_LOGI(TAG, "RFM95 REG_VERSION after reset = 0x%02X", ver);
-		if (ver == 0x00 || ver == 0xFF) {
-			ESP_LOGE(TAG, "RFM95 still unresponsive - check wiring, VCC, GND, CS and RST pins and ensure LORA_CS is not a flash pin (GPIO6)");
-		}
-	}
-
+// Full radio register configuration. Called from rfm95_init() and from the
+// set_mode() recovery path: a hardware reset returns ALL SX1276 registers to
+// power-on defaults (FSK mode, default bitrate, no sync word), so reset alone
+// leaves the radio deaf - every register must be rewritten after it.
+// Uses direct register writes (not set_mode_sleep) to avoid recursion into
+// the set_mode() recovery path.
+static void radio_configure(void) {
 	// Enable PA_BOOST for TTGO LoRa32 boards (usually required for TX)
 	write_register(REG_PA_CONFIG, 0x8F);
 
 	// Enable LNA with max gain and boost
 	write_register(REG_LNA, 0x23);
 
-#ifndef USE_POLLING
-	// Interrupt mode: настройка DIO2 для прерывания при SyncMatch
-	// Note: gpio_install_isr_service() must be called once in app_main() before rfm95_init()
-	gpio_set_direction(LORA_DIO2, GPIO_MODE_INPUT);
-	gpio_set_intr_type(LORA_DIO2, GPIO_INTR_POSEDGE);
-	gpio_isr_handler_add(LORA_DIO2, rx_interrupt, 0);
-#endif
 	// DIO2 mapping = 11 = SyncAddress в FSK/OOK Packet mode (Table 28, SX1276 datasheet)
 	write_register(REG_DIO_MAPPING_1, 3 << DIO2_MAPPING_SHIFT);
 
 	// Must be in Sleep mode first before the second call can change to FSK/OOK mode.
-	set_mode_sleep();
-	set_mode_sleep();
+	write_register(REG_OP_MODE, FSK_OOK_MODE | MODULATION_OOK | MODE_SLEEP);
+	usleep(1000);  // 1ms: oscillator wake after sleep entry can take up to ~1ms
+	write_register(REG_OP_MODE, FSK_OOK_MODE | MODULATION_OOK | MODE_SLEEP);
+	usleep(1000);
 
 	// Ideal bit rate is 16384 bps; this works out to 16385 bps.
 	write_register(REG_BITRATE_MSB, 0x07);
@@ -201,6 +190,36 @@ void rfm95_init(void) {
 	write_register(REG_PACKET_CONFIG_1, PACKET_FORMAT_FIXED);
 	write_register(REG_PAYLOAD_LENGTH, 0);
 	write_register(REG_PACKET_CONFIG_2, PACKET_MODE| 0);
+}
+
+void rfm95_init(void) {
+	spi_init();
+
+	// Hardware reset and quick diagnostic: verify REG_VERSION to confirm SPI comms
+	rfm95_reset();
+	ESP_LOGI(TAG, "Using CS pin: %d", LORA_CS);
+	uint8_t ver = read_register(REG_VERSION);
+	ESP_LOGI(TAG, "RFM95 REG_VERSION = 0x%02X", ver);
+	if (ver == 0x00 || ver == 0xFF) {
+		ESP_LOGW(TAG, "RFM95 appears not responding (REG_VERSION=0x%02X). Trying another reset...", ver);
+		rfm95_reset();
+		vTaskDelay(pdMS_TO_TICKS(100));
+		ver = read_register(REG_VERSION);
+		ESP_LOGI(TAG, "RFM95 REG_VERSION after reset = 0x%02X", ver);
+		if (ver == 0x00 || ver == 0xFF) {
+			ESP_LOGE(TAG, "RFM95 still unresponsive - check wiring, VCC, GND, CS and RST pins and ensure LORA_CS is not a flash pin (GPIO6)");
+		}
+	}
+
+	radio_configure();
+
+#ifndef USE_POLLING
+	// Interrupt mode: настройка DIO2 для прерывания при SyncMatch
+	// Note: gpio_install_isr_service() must be called once in app_main() before rfm95_init()
+	gpio_set_direction(LORA_DIO2, GPIO_MODE_INPUT);
+	gpio_set_intr_type(LORA_DIO2, GPIO_INTR_POSEDGE);
+	gpio_isr_handler_add(LORA_DIO2, rx_interrupt, 0);
+#endif
 }
 
 static inline bool fifo_empty(void) {
