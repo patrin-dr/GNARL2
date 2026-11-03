@@ -32,7 +32,8 @@ jobs:
 
       # Выбор платы: TTGO LoRa32 V1.6.1
       - name: Select TTGO LoRa32 V1.6.1 board
-        run: sed -i 's|^// #define BOARD_TTGO_LORA32_V161|#define BOARD_TTGO_LORA32_V161|' include/module.h
+        run: |
+          sed -i 's|^// #define BOARD_TTGO_LORA32_V161|#define BOARD_TTGO_LORA32_V161|' include/module.h
 
       - name: Build firmware (ESP-IDF v5.4.1, target esp32)
         uses: espressif/esp-idf-ci-action@v1
