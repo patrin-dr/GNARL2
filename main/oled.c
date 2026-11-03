@@ -44,6 +44,8 @@ static bool display_on = true;
 static bool screen_flipped = false;         // 180-degree rotation
 static int64_t last_activity_us = 0;        // last BLE connection / button press
 
+static void oled_apply_orientation(void);
+
 //---------------------------------------------------------------------
 // Low-level SSD1306 I2C
 //---------------------------------------------------------------------
