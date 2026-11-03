@@ -1,8 +1,8 @@
-# CPU frequency (keep current project baseline at 80MHz)
-# CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_80=
-CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_160=y
-# CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240 is not set
-CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=160
+# CPU frequency (80 MHz is enough: radio timing is done via SX1276 registers
+# and esp_timer, not CPU-bound; saves ~20% active power)
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_80=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=80
 
-CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
-CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
+# TTGO LoRa32 V1.6.1 has 4 MB flash (NOT 8 MB) - mismatch causes boot loop!
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
