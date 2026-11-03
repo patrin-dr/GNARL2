@@ -11,6 +11,10 @@ on:
         description: "Частота помпы в Гц (по умолчанию 868250000)"
         required: false
         type: string
+      ble_name:
+        description: "BLE-имя устройства (макс. 8 символов, по умолчанию MYGN)"
+        required: false
+        type: string
   push:
     tags: ["v*"]
 
@@ -40,10 +44,19 @@ jobs:
             echo "::warning::PUMP_ID not set — using pump_config.h from the repo"
           fi
 
-      # Выбор платы: TTGO LoRa32 V1.6.1
-      - name: Select TTGO LoRa32 V1.6.1 board
+      # Плата TTGO LoRa32 V1.6.1 выбрана по умолчанию в include/module.h —
+      # отдельный шаг выбора платы не нужен.
+
+      # BLE-имя устройства (если задано при запуске)
+      - name: Configure BLE name
+        if: ${{ inputs.ble_name != '' }}
+        shell: bash
+        env:
+          BLE_NAME: ${{ inputs.ble_name }}
         run: |
-          sed -i 's|^// #define BOARD_TTGO_LORA32_V161|#define BOARD_TTGO_LORA32_V161|' include/module.h
+          NAME="${BLE_NAME:0:8}"
+          sed -i "s|^#define BLE_NAME[[:space:]].*|#define BLE_NAME        \"${NAME}\"|" include/module.h
+          echo "BLE_NAME set to ${NAME}"
 
       - name: Build firmware (ESP-IDF v5.4.1, target esp32)
         uses: espressif/esp-idf-ci-action@v1
