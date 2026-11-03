@@ -1,0 +1,56 @@
+name: firmware
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Если задан секрет PUMP_ID — генерируем pump_config.h из секретов,
+      # иначе берём файл из репозитория (для тестовых сборок).
+      - name: Configure pump settings
+        shell: bash
+        env:
+          PUMP_ID: ${{ secrets.PUMP_ID }}
+          PUMP_FREQUENCY: ${{ secrets.PUMP_FREQUENCY }}
+        run: |
+          if [ -n "$PUMP_ID" ]; then
+            printf '#ifndef PUMP_CONFIG_H\n#define PUMP_CONFIG_H\n\n#define PUMP_ID\t\t"%s"\t// pump serial number\n#define PUMP_FREQUENCY\t%s\t// working pump frequency\n\n#endif\n' \
+              "$PUMP_ID" "${PUMP_FREQUENCY:-868250000}" > include/pump_config.h
+            echo "pump_config.h generated from secrets (PUMP_ID=${PUMP_ID})"
+          else
+            echo "::warning::secrets.PUMP_ID not set — using pump_config.h from the repo"
+          fi
+
+      # Выбор платы: TTGO LoRa32 V1.6.1
+      - name: Select TTGO LoRa32 V1.6.1 board
+        run: sed -i 's|^// #define BOARD_TTGO_LORA32_V161|#define BOARD_TTGO_LORA32_V161|' include/module.h
+
+      - name: Build firmware (ESP-IDF v5.4.1, target esp32)
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.4.1
+          target: esp32
+          command: idf.py build && idf.py merge-bin -o rileylink-ttgo.bin
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rileylink-ttgo
+          path: build/rileylink-ttgo.bin
+
+      # Релиз создаётся при пуше тега вида v* (например v0.1)
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/rileylink-ttgo.bin
+          generate_release_notes: true
