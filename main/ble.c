@@ -73,6 +73,17 @@ bool ble_is_ready(void) {
 	return ble_ready;
 }
 
+int8_t ble_get_rssi(void) {
+	int8_t rssi = 127;
+	if (!connected) {
+		return 127;
+	}
+	if (ble_gap_conn_rssi(connection_handle, &rssi) != 0) {
+		return 127;
+	}
+	return rssi;
+}
+
 static uint16_t response_count_notify_handle;
 static int response_count_notify_state;
 static uint8_t response_count;
