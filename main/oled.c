@@ -12,6 +12,8 @@
 #include <freertos/task.h>
 #include <esp_timer.h>
 #include <driver/i2c.h>
+#include <driver/gpio.h>
+#include <nvs.h>
 
 #include "gnarl.h"
 #include "adc.h"
@@ -29,7 +31,18 @@
 #define OLED_PAGES      (OLED_HEIGHT / 8)
 #define OLED_LINE_CHARS (OLED_WIDTH / 6)
 
+// Screensaver: display off after 5 minutes without BLE connection
+#define OLED_SCREENSAVER_US  (5LL * 60 * 1000000)
+// Long button press threshold (screen flip 180 degrees)
+#define BTN_LONG_PRESS_US    (1500LL * 1000)
+// Button debounce
+#define BTN_DEBOUNCE_US      (50LL * 1000)
+
 static uint8_t fb[OLED_WIDTH * OLED_PAGES]; // framebuffer: page-major
+
+static bool display_on = true;
+static bool screen_flipped = false;         // 180-degree rotation
+static int64_t last_activity_us = 0;        // last BLE connection / button press
 
 //---------------------------------------------------------------------
 // Low-level SSD1306 I2C
@@ -84,6 +97,49 @@ static void oled_hw_init(void) {
 	for (size_t i = 0; i < sizeof(init_seq); i++) {
 		oled_cmd(init_seq[i]);
 	}
+	oled_apply_orientation();
+}
+
+//---------------------------------------------------------------------
+// Power / orientation / NVS persistence
+//---------------------------------------------------------------------
+
+static void oled_set_power(bool on) {
+	display_on = on;
+	oled_cmd(on ? 0xAF : 0xAE);  // display ON / sleep
+}
+
+static void oled_apply_orientation(void) {
+	oled_cmd(screen_flipped ? 0xA0 : 0xA1);  // segment remap
+	oled_cmd(screen_flipped ? 0xC0 : 0xC8);  // COM scan direction
+}
+
+static void oled_load_flip(void) {
+	nvs_handle_t h;
+	if (nvs_open("pickle", NVS_READONLY, &h) == ESP_OK) {
+		uint8_t v = 0;
+		if (nvs_get_u8(h, "oled_flip", &v) == ESP_OK) {
+			screen_flipped = (v != 0);
+		}
+		nvs_close(h);
+	}
+}
+
+static void oled_save_flip(void) {
+	nvs_handle_t h;
+	if (nvs_open("pickle", NVS_READWRITE, &h) == ESP_OK) {
+		nvs_set_u8(h, "oled_flip", screen_flipped ? 1 : 0);
+		nvs_commit(h);
+		nvs_close(h);
+	}
+}
+
+//---------------------------------------------------------------------
+// Drawing
+//---------------------------------------------------------------------
+
+static void oled_clear(void) {
+	memset(fb, 0, sizeof(fb));
 }
 
 static void oled_flush(void) {
@@ -99,14 +155,6 @@ static void oled_flush(void) {
 		oled_write(fb + sent, chunk, 0x40);
 		sent += chunk;
 	}
-}
-
-//---------------------------------------------------------------------
-// Drawing
-//---------------------------------------------------------------------
-
-static void oled_clear(void) {
-	memset(fb, 0, sizeof(fb));
 }
 
 static void oled_char(int x, int page, char c) {
@@ -158,15 +206,15 @@ static void oled_draw_status(void) {
 		 (unsigned long)(f / 1000000), (unsigned long)((f % 1000000) / 1000));
 	oled_text(0, 3, buf);
 
-	// Line 4: pump link - RSSI + seconds since last pump response
+	// Line 4: pump link - averaged RSSI + seconds since last pump response
 	if (last_pump_rx_us == 0) {
 		snprintf(buf, sizeof(buf), "Pump --- no data");
 	} else {
 		uint32_t age_s = (uint32_t)((esp_timer_get_time() - last_pump_rx_us) / 1000000);
 		if (age_s > 9999) {
-			snprintf(buf, sizeof(buf), "Pump %ddBm  old", last_pump_rssi);
+			snprintf(buf, sizeof(buf), "Pump %ddBm  old", last_pump_rssi_avg);
 		} else {
-			snprintf(buf, sizeof(buf), "Pump %ddBm %lus", last_pump_rssi, (unsigned long)age_s);
+			snprintf(buf, sizeof(buf), "Pump %ddBm %lus", last_pump_rssi_avg, (unsigned long)age_s);
 		}
 	}
 	oled_text(0, 4, buf);
@@ -199,12 +247,68 @@ static void oled_draw_status(void) {
 static void oled_task(void *arg) {
 	// Wait a moment for power to stabilize after boot
 	vTaskDelay(pdMS_TO_TICKS(500));
+	oled_load_flip();
 	oled_hw_init();
 	ESP_LOGI("OLED", "SSD1306 initialized (%s)", BLE_NAME);
 
+	// Button (BOOT button, active low)
+	gpio_set_direction(BUTTON, GPIO_MODE_INPUT);
+	gpio_set_pull_mode(BUTTON, GPIO_PULLUP_ONLY);
+
+	last_activity_us = esp_timer_get_time();
+	int64_t last_draw_us = 0;
+	bool was_connected = ble_is_connected();
+	bool btn_prev = false;
+	int64_t btn_press_us = 0;
+
 	while (1) {
-		oled_draw_status();
-		vTaskDelay(pdMS_TO_TICKS(1000));
+		int64_t now = esp_timer_get_time();
+
+		// --- Button: short press = display on/off, long press = flip 180 ---
+		bool btn = (gpio_get_level(BUTTON) == 0);
+		if (btn && !btn_prev) {
+			btn_press_us = now;
+		} else if (!btn && btn_prev) {
+			int64_t held = now - btn_press_us;
+			if (held >= BTN_LONG_PRESS_US) {
+				screen_flipped = !screen_flipped;
+				oled_save_flip();
+				oled_apply_orientation();
+				if (!display_on) oled_set_power(true);
+				last_activity_us = now;
+				last_draw_us = 0;  // force redraw
+			} else if (held >= BTN_DEBOUNCE_US) {
+				oled_set_power(!display_on);
+				if (display_on) {
+					last_activity_us = now;
+					last_draw_us = 0;
+				}
+			}
+		}
+		btn_prev = btn;
+
+		// --- Screensaver & wake-on-connect ---
+		bool conn = ble_is_connected();
+		if (conn) {
+			last_activity_us = now;
+			if (!was_connected && !display_on) {
+				oled_set_power(true);
+				last_draw_us = 0;
+			}
+		}
+		was_connected = conn;
+
+		if (display_on && (now - last_activity_us) > OLED_SCREENSAVER_US) {
+			oled_set_power(false);
+		}
+
+		// --- Redraw once per second ---
+		if (display_on && (now - last_draw_us) >= 1000000) {
+			oled_draw_status();
+			last_draw_us = now;
+		}
+
+		vTaskDelay(pdMS_TO_TICKS(50));
 	}
 }
 
