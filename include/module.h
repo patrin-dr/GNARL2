@@ -10,8 +10,8 @@
 #define BLE_NAME        "MYGN"
 
 // Light sleep when BLE disconnected (~0.8mA vs ~20-40mA active)
-// Uncomment to enable light sleep mode
-// #define BLE_SLEEP
+// Requires CONFIG_PM_ENABLE + tickless idle (enabled in sdkconfig.defaults)
+#define BLE_SLEEP
 
 // Board selection (for classic ESP32 boards only; ESP32-C6 is auto-detected).
 // This fork targets TTGO LoRa32 V1.6.1 by default.
