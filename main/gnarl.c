@@ -240,8 +240,13 @@ void led_set_mode(uint8_t mode) {
 #define LED_QUEUE_LENGTH 10
 static QueueHandle_t led_queue = NULL;
 
+// Radio packet counters (shown on OLED / diagnostics)
+volatile uint32_t radio_tx_count = 0;
+volatile uint32_t radio_rx_count = 0;
+
 // Activity indicator functions - send events to LED task (non-blocking)
 void led_indicate_radio_tx(void) {
+	radio_tx_count++;
 	if (led_queue != NULL && current_led_mode == LED_MODE_ON) {
 		led_event_t event = LED_EVENT_RADIO_TX;
 		xQueueSend(led_queue, &event, 0); // Don't block if queue full
@@ -249,6 +254,7 @@ void led_indicate_radio_tx(void) {
 }
 
 void led_indicate_radio_rx(void) {
+	radio_rx_count++;
 	if (led_queue != NULL && current_led_mode == LED_MODE_ON) {
 		led_event_t event = LED_EVENT_RADIO_RX;
 		xQueueSend(led_queue, &event, 0);
