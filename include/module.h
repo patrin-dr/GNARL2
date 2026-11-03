@@ -47,7 +47,8 @@
     // Battery sensing enabled on Super Mini with external divider on GPIO0
     // Divider: 1MΩ (R1) + 1MΩ (R2) = 1:1 ratio -> VBAT = ADC * 2.0
     // 1S LiPo: 2.5-4.2V -> ADC sees 1.25-2.1V
-    #define BATTERY_ADC     GPIO_NUM_0
+    #define BATTERY_ADC        GPIO_NUM_0
+    // VBAT voltage divider (kΩ): 1MΩ + 1MΩ
     #define VDIV_R1_KOHM    1000
     #define VDIV_R2_KOHM    1000
 
@@ -112,14 +113,17 @@
     #define LORA_DIO1       GPIO_NUM_33
     #define LORA_DIO2       GPIO_NUM_32
     
-    // Battery sense: GPIO37 must be LOW to enable divider on GPIO36
-    #define BATTERY_SENSE_EN GPIO_NUM_37
-    #define BATTERY_ADC      GPIO_NUM_36
-    
-    // VBAT voltage divider (kΩ): 220k/100k => VBAT = ADC × 3.2
+    // Battery sense ADC pin
+    #define BATTERY_ADC             GPIO_NUM_37
+
+    // VBAT sense enable (active LOW)
+    #define BATTERY_SENSE_EN        GPIO_NUM_21
+    #define BATTERY_SENSE_EN_ACTIVE 0
+
+    // VBAT voltage divider (kΩ): ~220k/100k => VBAT ≈ ADC × 3.2
     #define VDIV_R1_KOHM    220
     #define VDIV_R2_KOHM    100
 
-#endif // CONFIG_IDF_TARGET_ESP32C6
+#endif
 
 #endif // _MODULE_H
