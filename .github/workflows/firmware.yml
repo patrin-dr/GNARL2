@@ -94,6 +94,16 @@ jobs:
           path: build/rileylink-ttgo.bin
           retention-days: 30
 
+      # ELF + MAP нужны для декодирования backtrace (addr2line) при крэшах на железе
+      - name: Upload debug symbols
+        uses: actions/upload-artifact@v4
+        with:
+          name: rileylink-ttgo-debug
+          path: |
+            build/pickle-stable.elf
+            build/pickle-stable.map
+          retention-days: 30
+
       # Релиз создаётся при пуше тега вида v* (например v0.1)
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
