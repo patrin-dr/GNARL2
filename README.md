@@ -151,8 +151,10 @@ written to the free slot while the old one stays untouched as a fallback.
    in the app, and a press within ~0.5 s of the first lands before it starts —
    the second boot then counts as the first.
 2. Connect to Wi-Fi **`GNARL-OTA`**, password **`rileylink`**.
-3. Open http://192.168.4.1, pick **`pickle-stable.bin`**
-   (the `rileylink-ttgo-ota` artifact of the desired build) → **Upload**.
+3. Open http://192.168.4.1 — the page header shows the **currently running
+   build's SHA**, so you can check what you're about to replace. Pick
+   **`pickle-stable.bin`** (the `rileylink-ttgo-ota` artifact of the desired
+   build) → **Upload**.
 4. Progress shows on the page and on the OLED (`[===   ] NN%`).
    The device reboots automatically when done.
 

@@ -89,12 +89,11 @@ bool ota_entry_requested(void) {
 // HTTP server
 //---------------------------------------------------------------------
 
-// Upload page: raw binary POST via fetch() (no multipart parsing needed)
-static const char INDEX_HTML[] =
-	"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\">"
-	"<title>GNARL2 OTA</title>"
-	"<style>body{font-family:sans-serif;max-width:30em;margin:2em auto;padding:0 1em}</style>"
-	"<h3>GNARL2 OTA update</h3>"
+// Upload page: raw binary POST via fetch() (no multipart parsing needed).
+// The page head (with the current build SHA) is generated dynamically in
+// index_get_handler; this static tail contains '%' in JS, so it must never
+// be used as an snprintf format string.
+static const char INDEX_BODY[] =
 	"<p><input type=file id=f accept=\".bin\"></p>"
 	"<p><button onclick=go()>Upload</button></p>"
 	"<pre id=s>idle</pre>"
@@ -116,7 +115,17 @@ static const char INDEX_HTML[] =
 
 static esp_err_t index_get_handler(httpd_req_t *req) {
 	httpd_resp_set_type(req, "text/html");
-	return httpd_resp_send(req, INDEX_HTML, sizeof(INDEX_HTML) - 1);
+	char head[192];
+	snprintf(head, sizeof(head),
+		 "<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\">"
+		 "<title>GNARL2 OTA</title>"
+		 "<style>body{font-family:sans-serif;max-width:30em;margin:2em auto;padding:0 1em}</style>"
+		 "<h3>GNARL2 OTA update</h3>"
+		 "<p>Current build: <b>%s</b></p>", FW_GIT_SHA);
+	httpd_resp_send_chunk(req, head, HTTPD_RESP_USE_STRLEN);
+	httpd_resp_send_chunk(req, INDEX_BODY, sizeof(INDEX_BODY) - 1);
+	httpd_resp_send_chunk(req, NULL, 0);  // end of response
+	return ESP_OK;
 }
 
 static esp_err_t status_get_handler(httpd_req_t *req) {
