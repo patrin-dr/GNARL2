@@ -115,7 +115,8 @@ static const char INDEX_BODY[] =
 
 static esp_err_t index_get_handler(httpd_req_t *req) {
 	httpd_resp_set_type(req, "text/html");
-	char head[192];
+	// -Werror=format-truncation: GCC считает худший случай ~256 байт
+	char head[320];
 	snprintf(head, sizeof(head),
 		 "<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\">"
 		 "<title>GNARL2 OTA</title>"
