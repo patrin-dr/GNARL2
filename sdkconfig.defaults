@@ -31,3 +31,15 @@ CONFIG_ESP_TASK_WDT_TIMEOUT_S=30
 
 # Disable Brownout Detector
 CONFIG_ESP_BROWNOUT_DET=n
+
+# OTA (wireless firmware update)
+# Custom partition table with ota_0/ota_1 slots (see partitions.csv)
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0x8000
+CONFIG_PARTITION_TABLE_MD5=y
+# Bootloader rollback: a new OTA image must confirm itself within 60 s
+# of uptime (see ota_confirm_task in main.c), otherwise the bootloader
+# reverts to the previous working image on next reboot.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
