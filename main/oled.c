@@ -31,8 +31,8 @@
 #define OLED_PAGES      (OLED_HEIGHT / 8)
 #define OLED_LINE_CHARS (OLED_WIDTH / 6)
 
-// Pump RSSI bar: 8 segments, -60 dBm (or stronger) = full, -95 dBm = empty
-#define RSSI_BAR_WIDTH  8
+// Pump RSSI bar: 5 segments (~20% each), -60 dBm (or stronger) = full, -95 dBm = empty
+#define RSSI_BAR_WIDTH  5
 #define RSSI_BAR_FULL_DBM   (-60)
 #define RSSI_BAR_EMPTY_DBM  (-95)
 
