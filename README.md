@@ -18,7 +18,7 @@ This project uses code from:
 - **OTA update over Wi-Fi** — double-press RST, no cable or computer needed
 - **Automatic rollback** — if a fresh OTA image doesn't confirm itself within
   60 seconds, the bootloader reverts to the previous working firmware
-- **OLED status screen** — battery, frequency, pump signal bar, link quality, uptime
+- **OLED status screen** — battery, phone & pump signal bars, link quality, uptime
 - **TTGO LoRa32 V1.6.1 as the default board** (selected in `include/module.h`)
 - **GitHub Actions CI** producing flashable binaries; pump ID injected at build
   time from workflow input or a secret
@@ -219,20 +219,25 @@ every 5 s when idle):
 ```
 MYGN    BLE:CONNECTED  <- BLE name (left) + state (right)
 Batt 4.02V     87%    <- battery
-Freq 868.250 MHz      <- radio frequency
+BLE  [==---] -62dBm   <- phone signal bar (BLE RSSI)
 Pump [==---] 5s       <- pump signal bar (RSSI) + last response age
 Pump ID 123456        <- pump serial compiled into firmware
-Link 98% ok           <- successful RX share
+Link 98% ok           <- successful RX share, last ~100 packets
 Up 02:34:17           <- uptime
 ```
 
-The RSSI behind the bar is smoothed with an exponential moving average
-(~4 packets). Bar scale: -95 dBm = empty, -60 dBm or stronger = full
+The RSSI behind the pump bar is smoothed with an exponential moving average
+(~4 packets). Pump bar scale: -95 dBm = empty, -60 dBm or stronger = full;
+BLE bar scale: -90 dBm = empty, -40 dBm or stronger = full
 (5 segments ≈ 20% each) — handy for finding a good placement for the device.
 
-**Connection-loss alert:** while BLE is disconnected, the top status line blinks
-inverted (~1 Hz) — you can spot a dropped link at a glance. The screensaver
-still turns the display off after 5 minutes without a connection.
+`Link` is a sliding window over the last ~100 pump receptions, so it reflects
+the current link quality rather than a lifetime average.
+
+**Blink alerts** (inverted line): the top line blinks while BLE is
+disconnected, `Pump` blinks when the pump has been silent for over 60 s,
+and `Batt` blinks below 20% charge. The screensaver still turns the display
+off after 5 minutes without a BLE connection.
 
 For the first ~1.5 s after boot a hint screen shows
 `GNARL2 <build> / 2x RST = OTA mode` — it also confirms the device reached the
@@ -287,6 +292,7 @@ restart the app. That's app behavior, not a firmware issue.
 - Check the frequency (usually 868250000 Hz for EU pumps)
 - Keep the pump within ~1–2 m; watch the `Pump [bar] Ns` line on the screen —
   the bar shows signal strength, the seconds show the last response age
+  (the line blinks when the pump has been silent for over 60 s)
 
 ### Double-RST doesn't enter OTA mode
 - You're pressing too fast: the second press must come **after the screen lights

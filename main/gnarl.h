@@ -32,3 +32,7 @@ extern volatile uint32_t radio_rx_timeout_count;
 extern volatile int last_pump_rssi;        // dBm of last received pump packet
 extern volatile int last_pump_rssi_avg;    // exponential moving average of pump RSSI
 extern volatile int64_t last_pump_rx_us;   // time of last pump RX (0 = never)
+
+// Percent of successful RX over a sliding window of the last ~100 outcomes;
+// -1 when no packets received yet
+int radio_link_quality(void);

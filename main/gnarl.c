@@ -248,6 +248,31 @@ volatile int last_pump_rssi = 0;          // dBm of last received pump packet
 volatile int last_pump_rssi_avg = 0;      // exponential moving average of pump RSSI
 volatile int64_t last_pump_rx_us = 0;     // time of last pump RX (0 = never)
 
+// Link quality sliding window: last ~100 RX outcomes (1 = ok, 0 = timeout)
+#define LINK_WINDOW_SIZE 100
+static uint8_t link_window[LINK_WINDOW_SIZE];
+static uint16_t link_window_pos = 0;
+static uint16_t link_window_fill = 0;
+
+static void link_window_add(int ok) {
+	link_window[link_window_pos] = (uint8_t)ok;
+	link_window_pos = (link_window_pos + 1) % LINK_WINDOW_SIZE;
+	if (link_window_fill < LINK_WINDOW_SIZE) {
+		link_window_fill++;
+	}
+}
+
+int radio_link_quality(void) {
+	if (link_window_fill == 0) {
+		return -1;
+	}
+	uint32_t sum = 0;
+	for (uint16_t i = 0; i < link_window_fill; i++) {
+		sum += link_window[i];
+	}
+	return (int)(sum * 100 / link_window_fill);
+}
+
 // Activity indicator functions - send events to LED task (non-blocking)
 void led_indicate_radio_tx(void) {
 	radio_tx_count++;
@@ -259,6 +284,7 @@ void led_indicate_radio_tx(void) {
 
 void led_indicate_radio_rx(void) {
 	radio_rx_count++;
+	link_window_add(1);
 	if (led_queue != NULL && current_led_mode == LED_MODE_ON) {
 		led_event_t event = LED_EVENT_RADIO_RX;
 		xQueueSend(led_queue, &event, 0);
@@ -413,7 +439,6 @@ static inline void reverse_four_bytes(void *ptr) {
 	tmp[3] = swap;
 	swap = tmp[1];
 	tmp[1] = tmp[2];
-	tmp[2] = swap;
 	memcpy(ptr, tmp, 4);
 }
 
@@ -484,6 +509,7 @@ static uint8_t raw_rssi(int rssi) {
 static void rx_common(int n, int rssi) {
 	if (n == 0) {
 		radio_rx_timeout_count++;
+		link_window_add(0);
 		ESP_LOGD(TAG, "RX: timeout");
 		send_code(RESPONSE_CODE_RX_TIMEOUT);
 		return;

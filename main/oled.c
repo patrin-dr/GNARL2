@@ -17,7 +17,6 @@
 
 #include "gnarl.h"
 #include "adc.h"
-#include "rfm95.h"
 #include "pump_config.h"
 #include "oled_font.h"
 
@@ -36,6 +35,15 @@
 #define RSSI_BAR_FULL_DBM   (-60)
 #define RSSI_BAR_EMPTY_DBM  (-95)
 
+// BLE RSSI bar: same 5 segments, -40 dBm (or stronger) = full, -90 dBm = empty
+#define BLE_BAR_FULL_DBM    (-40)
+#define BLE_BAR_EMPTY_DBM   (-90)
+
+// Pump link-loss alert: line blinks when no pump response for this long
+#define PUMP_STALE_S        60
+// Low-battery alert: Batt line blinks below this charge level
+#define BATT_LOW_PERCENT    20
+
 // Screensaver: display off after 5 minutes without BLE connection
 #define OLED_SCREENSAVER_US  (5LL * 60 * 1000000)
 // Long button press threshold (screen flip 180 degrees)
@@ -48,7 +56,7 @@ static uint8_t fb[OLED_WIDTH * OLED_PAGES]; // framebuffer: page-major
 static bool display_on = true;
 static bool screen_flipped = false;         // 180-degree rotation
 static int64_t last_activity_us = 0;        // last BLE connection / button press
-static bool blink_on = false;               // BLE-loss blink phase (line 0)
+static bool blink_on = false;               // blink phase (line alerts)
 
 static void oled_apply_orientation(void);
 
@@ -183,6 +191,31 @@ static void oled_text(int x, int line, const char *s) {
 	}
 }
 
+// Invert one display page (0..7): solid bar, dark text - used for blink alerts
+static void oled_invert_line(int line) {
+	for (int i = line * OLED_WIDTH; i < (line + 1) * OLED_WIDTH; i++) {
+		fb[i] ^= 0xFF;
+	}
+}
+
+// Number of filled bar segments for an RSSI value within [empty_dbm..full_dbm]
+static int bar_filled(int rssi_dbm, int empty_dbm, int full_dbm) {
+	int f = (rssi_dbm - empty_dbm) * RSSI_BAR_WIDTH / (full_dbm - empty_dbm);
+	if (f < 0) f = 0;
+	if (f > RSSI_BAR_WIDTH) f = RSSI_BAR_WIDTH;
+	return f;
+}
+
+// Render "[==---]" into bar (must hold RSSI_BAR_WIDTH + 3 chars)
+static void make_bar(char *bar, int filled) {
+	bar[0] = '[';
+	for (int i = 0; i < RSSI_BAR_WIDTH; i++) {
+		bar[1 + i] = (i < filled) ? '=' : '-';
+	}
+	bar[RSSI_BAR_WIDTH + 1] = ']';
+	bar[RSSI_BAR_WIDTH + 2] = '\0';
+}
+
 //---------------------------------------------------------------------
 // Status screen
 //---------------------------------------------------------------------
@@ -194,47 +227,54 @@ static void oled_draw_status(void) {
 
 	// Line 0: name (left) + BLE state (flush right).
 	// Connection-loss alert: while BLE is down the whole line
-	// inverts every other redraw (~1 Hz blink).
+	// inverts every other redraw (blink).
 	snprintf(buf, sizeof(buf), "%s%*s", BLE_NAME,
 		 OLED_LINE_CHARS - (int)strlen(BLE_NAME),
 		 ble_is_connected() ? "BLE:CONNECTED" : "BLE:WAITING");
 	oled_text(0, 0, buf);
 	if (!ble_is_connected() && blink_on) {
-		for (int i = 0; i < OLED_WIDTH; i++) {
-			fb[i] ^= 0xFF;  // invert page 0: solid bar, dark text
-		}
+		oled_invert_line(0);
 	}
 
-	// Line 2: battery
+	// Line 2: battery (blinks below BATT_LOW_PERCENT charge)
 	uint16_t mv = get_battery_voltage();
+	int batt_pct = battery_percent(mv);
 	snprintf(buf, sizeof(buf), "Batt %d.%02dV    %3d%%",
-		 mv / 1000, (mv % 1000) / 10, battery_percent(mv));
+		 mv / 1000, (mv % 1000) / 10, batt_pct);
 	oled_text(0, 2, buf);
+	if (batt_pct < BATT_LOW_PERCENT && blink_on) {
+		oled_invert_line(2);
+	}
 
-	// Line 3: radio frequency
-	uint32_t f = read_frequency();
-	snprintf(buf, sizeof(buf), "Freq %lu.%03lu MHz",
-		 (unsigned long)(f / 1000000), (unsigned long)((f % 1000000) / 1000));
+	// Line 3: BLE link - RSSI bar + dBm (phone signal strength).
+	// Replaces the frequency line: the frequency is static after boot.
+	if (ble_is_connected()) {
+		int8_t r = ble_get_rssi();
+		if (r == 127) {
+			snprintf(buf, sizeof(buf), "BLE  rssi n/a");
+		} else {
+			char bar[RSSI_BAR_WIDTH + 3];
+			make_bar(bar, bar_filled(r, BLE_BAR_EMPTY_DBM, BLE_BAR_FULL_DBM));
+			snprintf(buf, sizeof(buf), "BLE  %s %ddBm", bar, (int)r);
+		}
+	} else {
+		snprintf(buf, sizeof(buf), "BLE  no link");
+	}
 	oled_text(0, 3, buf);
 
-	// Line 4: pump link - RSSI bar + seconds since last pump response
+	// Line 4: pump link - RSSI bar + seconds since last pump response.
+	// Link-loss alert: no pump response for PUMP_STALE_S -> line blinks.
+	bool pump_stale = false;
 	if (last_pump_rx_us == 0) {
 		snprintf(buf, sizeof(buf), "Pump --- no data");
 	} else {
-		int filled = (last_pump_rssi_avg - RSSI_BAR_EMPTY_DBM)
-			 * RSSI_BAR_WIDTH / (RSSI_BAR_FULL_DBM - RSSI_BAR_EMPTY_DBM);
-		if (filled < 0) filled = 0;
-		if (filled > RSSI_BAR_WIDTH) filled = RSSI_BAR_WIDTH;
-
 		char bar[RSSI_BAR_WIDTH + 3];
-		bar[0] = '[';
-		for (int i = 0; i < RSSI_BAR_WIDTH; i++) {
-			bar[1 + i] = (i < filled) ? '=' : '-';
-		}
-		bar[RSSI_BAR_WIDTH + 1] = ']';
-		bar[RSSI_BAR_WIDTH + 2] = '\0';
+		make_bar(bar, bar_filled(last_pump_rssi_avg, RSSI_BAR_EMPTY_DBM, RSSI_BAR_FULL_DBM));
 
 		uint32_t age_s = (uint32_t)((esp_timer_get_time() - last_pump_rx_us) / 1000000);
+		if (age_s > PUMP_STALE_S) {
+			pump_stale = true;
+		}
 		if (age_s > 9999) {
 			snprintf(buf, sizeof(buf), "Pump %s old", bar);
 		} else {
@@ -242,19 +282,22 @@ static void oled_draw_status(void) {
 		}
 	}
 	oled_text(0, 4, buf);
+	if (pump_stale && blink_on) {
+		oled_invert_line(4);
+	}
 
 	// Line 5: pump serial
 	snprintf(buf, sizeof(buf), "Pump ID %s", PUMP_ID);
 	oled_text(0, 5, buf);
 
-	// Line 6: link quality - percent of successful RX vs timeouts
+	// Line 6: link quality - percent of successful RX over the last
+	// ~100 packets (sliding window: reflects current conditions)
 	{
-		uint32_t rx_ok = radio_rx_count;
-		uint32_t total = rx_ok + radio_rx_timeout_count;
-		if (total == 0) {
+		int q = radio_link_quality();
+		if (q < 0) {
 			snprintf(buf, sizeof(buf), "Link ---");
 		} else {
-			snprintf(buf, sizeof(buf), "Link %lu%% ok", (unsigned long)(rx_ok * 100 / total));
+			snprintf(buf, sizeof(buf), "Link %d%% ok", q);
 		}
 	}
 	oled_text(0, 6, buf);
@@ -327,7 +370,7 @@ static void oled_task(void *arg) {
 		}
 
 		// --- Redraw: every 1 s while connected (live RSSI/age),
-		// every 500 ms when idle - that sets the BLE-line blink rate.
+		// every 500 ms when idle - that sets the blink rate.
 		// Full flush is ~1 KB over I2C (~23 ms).
 		int64_t redraw_interval_us = conn ? 1000000 : 500000;
 		if (display_on && (now - last_draw_us) >= redraw_interval_us) {
