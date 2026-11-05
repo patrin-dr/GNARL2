@@ -4,7 +4,6 @@
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include <driver/gpio.h>
 #include <esp_event.h>
 #include <esp_http_server.h>
 #include <esp_log.h>
@@ -17,12 +16,15 @@
 #include "oled.h"
 #include "version.h"
 
+#include <esp_attr.h>
+
 #define TAG "ota"
 
-// Boot window for the PRG button: 30 x 100 ms = 3 s, hold >= 1 s to enter
-#define OTA_WINDOW_MS   3000
-#define OTA_HOLD_MS     1000
-#define OTA_POLL_MS     100
+// Double-reset detector: press RST twice within ~4 s to enter OTA mode.
+// The counter lives in RTC slow memory, which survives EN-triggered resets
+// (but not a full power loss - fine for our purposes).
+#define DRD_WINDOW_MS 4000
+static RTC_DATA_ATTR uint32_t s_drd_count;
 
 // Upload state (single connection at a time; the AP accepts max 2 clients)
 static volatile int s_progress = -1;   // -1 = idle, 0..99 = writing, 100 = done
@@ -30,28 +32,36 @@ static esp_ota_handle_t s_ota_handle;
 static bool s_ota_active = false;
 
 //---------------------------------------------------------------------
-// Boot-time entry check
+// Boot-time entry check (double-reset detector)
 //---------------------------------------------------------------------
 
+// Clear the DRD counter once the device has been up for DRD_WINDOW_MS -
+// resets after that point count as a new "first press".
+static void drd_clear_task(void *arg) {
+	vTaskDelay(pdMS_TO_TICKS(DRD_WINDOW_MS));
+	s_drd_count = 0;
+	vTaskDelete(NULL);
+}
+
 bool ota_entry_requested(void) {
-	gpio_set_direction(BUTTON, GPIO_MODE_INPUT);
-	gpio_set_pull_mode(BUTTON, GPIO_PULLUP_ONLY);
-
-	oled_ota_screen("GNARL2 " FW_GIT_SHA, "Hold PRG 1s = OTA", -1);
-
-	int held_ms = 0;
-	for (int t = 0; t < OTA_WINDOW_MS; t += OTA_POLL_MS) {
-		if (gpio_get_level(BUTTON) == 0) {
-			held_ms += OTA_POLL_MS;
-			if (held_ms >= OTA_HOLD_MS) {
-				ESP_LOGI(TAG, "PRG held - entering OTA mode");
-				return true;
-			}
-		} else {
-			held_ms = 0;
-		}
-		vTaskDelay(pdMS_TO_TICKS(OTA_POLL_MS));
+	// Count only RST-button / power-on resets. Crash resets (panic, WDT)
+	// reset the counter, so a crash-looping image can never end up in
+	// OTA mode by accident - the bootloader rollback handles that case.
+	if (esp_reset_reason() == ESP_RST_POWERON) {
+		s_drd_count++;
+	} else {
+		s_drd_count = 0;
 	}
+
+	// Brief boot hint (the regular status screen redraws over it ~1.5 s later)
+	oled_ota_screen("GNARL2 " FW_GIT_SHA, "2x RST = OTA mode", -1);
+
+	if (s_drd_count >= 2) {
+		s_drd_count = 0;
+		ESP_LOGI(TAG, "double reset detected - entering OTA mode");
+		return true;
+	}
+	xTaskCreate(drd_clear_task, "drd", 1536, NULL, 1, NULL);
 	return false;
 }
 

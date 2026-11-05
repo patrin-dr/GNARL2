@@ -10,10 +10,11 @@
 #define OTA_AP_PASSWORD "rileylink"   // WPA2 requires >= 8 chars
 #define OTA_AP_IP       "192.168.4.1"
 
-// Boot-time check with OLED prompt (~3 s window): returns true if the
-// PRG button was held for >= 1 s within the window.
-// Safe against the GPIO0 download-mode trap: the user presses PRG only
-// AFTER releasing RST, when the prompt appears.
+// Boot-time check (double-reset detector): returns true when the device
+// was reset twice in quick succession via the RST button.
+// This board revision has no PRG/IO0 button, so double-RST is the entry.
+// Only POWERON resets (RST button / power cycle) are counted - a crash
+// loop can never trigger OTA mode (the bootloader rollback handles that).
 bool ota_entry_requested(void);
 
 // Enter OTA mode: WiFi AP + HTTP update server + OLED progress.

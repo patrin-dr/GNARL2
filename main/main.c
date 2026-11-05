@@ -58,8 +58,8 @@ void app_main(void) {
 	}
 	ESP_ERROR_CHECK(nvs_err);
 
-	// OTA entry: 3 s boot window - hold PRG for 1 s to enter update mode
-	// (WiFi AP "GNARL-OTA", upload via browser at http://192.168.4.1).
+	// OTA entry: double-reset detector - press RST twice within ~4 s
+	// to enter update mode (WiFi AP "GNARL-OTA", http://192.168.4.1).
 	// Placed after NVS init: WiFi calibration data lives in NVS.
 	// In OTA mode radio/BLE are NOT started (saves power, avoids conflicts).
 	if (ota_entry_requested()) {
