@@ -265,9 +265,11 @@ static void oled_draw_status(void) {
 			} else {
 				ble_rssi_ema_x8 += ((int)r * 8 - ble_rssi_ema_x8) / 4;
 			}
-			int rs = (ble_rssi_ema_x8 + (ble_rssi_ema_x8 < 0 ? -4 : 4)) / 8;
+			// int8_t keeps the value range known to the compiler
+			// (avoids -Werror=format-truncation on the snprintf below)
+			int8_t rs = (int8_t)((ble_rssi_ema_x8 + (ble_rssi_ema_x8 < 0 ? -4 : 4)) / 8);
 			make_bar(bar, bar_filled(rs, BLE_BAR_EMPTY_DBM, BLE_BAR_FULL_DBM));
-			snprintf(buf, sizeof(buf), "BLE  %s %ddBm", bar, rs);
+			snprintf(buf, sizeof(buf), "BLE  %s %ddBm", bar, (int)rs);
 		}
 	} else {
 		ble_rssi_ema_valid = false;  // restart smoothing on next connect
