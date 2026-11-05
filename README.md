@@ -220,8 +220,8 @@ every 5 s when idle):
 MYGN    BLE:CONNECTED  <- BLE name (left) + state (right)
 Batt 4.02V     87%    <- battery
 BLE  [==---] -62dBm   <- phone signal bar (BLE RSSI)
-Pump [==---] 5s       <- pump signal bar (RSSI) + last response age
 Pump ID 123456        <- pump serial compiled into firmware
+Pump [==---] 5s       <- pump signal bar (RSSI) + last response age
 Link 98% ok           <- successful RX share, last ~100 packets
 Up 02:34:17           <- uptime
 ```

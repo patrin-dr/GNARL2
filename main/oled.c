@@ -262,7 +262,11 @@ static void oled_draw_status(void) {
 	}
 	oled_text(0, 3, buf);
 
-	// Line 4: pump link - RSSI bar + seconds since last pump response.
+	// Line 4: pump serial
+	snprintf(buf, sizeof(buf), "Pump ID %s", PUMP_ID);
+	oled_text(0, 4, buf);
+
+	// Line 5: pump link - RSSI bar + seconds since last pump response.
 	// Link-loss alert: no pump response for PUMP_STALE_S -> line blinks.
 	bool pump_stale = false;
 	if (last_pump_rx_us == 0) {
@@ -281,14 +285,10 @@ static void oled_draw_status(void) {
 			snprintf(buf, sizeof(buf), "Pump %s %lus", bar, (unsigned long)age_s);
 		}
 	}
-	oled_text(0, 4, buf);
-	if (pump_stale && blink_on) {
-		oled_invert_line(4);
-	}
-
-	// Line 5: pump serial
-	snprintf(buf, sizeof(buf), "Pump ID %s", PUMP_ID);
 	oled_text(0, 5, buf);
+	if (pump_stale && blink_on) {
+		oled_invert_line(5);
+	}
 
 	// Line 6: link quality - percent of successful RX over the last
 	// ~100 packets (sliding window: reflects current conditions)
