@@ -1,5 +1,7 @@
 #include <driver/gpio.h>
 #include <driver/spi_master.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 #include "module.h"
 #include "spi.h"
@@ -17,7 +19,21 @@
 
 static spi_device_handle_t spi_dev;
 
+// spi_device_transmit() is NOT thread-safe per Espressif docs when several
+// tasks share one SPI device (get_trans_result may return another task's
+// transaction -> assert "ret_trans == trans_desc"). Serialize all accesses.
+static SemaphoreHandle_t spi_mutex;
+
+static inline void spi_lock(void) {
+	xSemaphoreTake(spi_mutex, portMAX_DELAY);
+}
+
+static inline void spi_unlock(void) {
+	xSemaphoreGive(spi_mutex);
+}
+
 void spi_init(void) {
+	spi_mutex = xSemaphoreCreateMutex();
 	// Initialize the SPI bus.
 	spi_bus_config_t buscfg = {
 		.mosi_io_num   = LORA_MOSI,
@@ -56,7 +72,10 @@ uint8_t read_register(uint8_t addr) {
 		.cmd	= addr,
 		.length = 8,  // bits
 	};
-	ESP_ERROR_CHECK(spi_device_transmit(spi_dev, &t));
+	spi_lock();
+	esp_err_t err = spi_device_transmit(spi_dev, &t);
+	spi_unlock();
+	ESP_ERROR_CHECK(err);
 	return t.rx_data[0];
 }
 
@@ -67,7 +86,10 @@ void read_burst(uint8_t addr, uint8_t *buf, int count) {
 		.tx_buffer = buf,
 		.rx_buffer = buf,
 	};
-	ESP_ERROR_CHECK(spi_device_transmit(spi_dev, &t));
+	spi_lock();
+	esp_err_t err = spi_device_transmit(spi_dev, &t);
+	spi_unlock();
+	ESP_ERROR_CHECK(err);
 }
 
 // Write register by sending the address with the write bit set,
@@ -79,7 +101,10 @@ void write_register(uint8_t addr, uint8_t value) {
 		.length = 8,  // bits
 	};
 	t.tx_data[0] = value;
-	ESP_ERROR_CHECK(spi_device_transmit(spi_dev, &t));
+	spi_lock();
+	esp_err_t err = spi_device_transmit(spi_dev, &t);
+	spi_unlock();
+	ESP_ERROR_CHECK(err);
 }
 
 void write_burst(uint8_t addr, uint8_t *buf, int count) {
@@ -90,5 +115,8 @@ void write_burst(uint8_t addr, uint8_t *buf, int count) {
 		.rxlength  = 8,  // bits
 		.tx_buffer = buf,
 	};
-	ESP_ERROR_CHECK(spi_device_transmit(spi_dev, &t));
+	spi_lock();
+	esp_err_t err = spi_device_transmit(spi_dev, &t);
+	spi_unlock();
+	ESP_ERROR_CHECK(err);
 }
