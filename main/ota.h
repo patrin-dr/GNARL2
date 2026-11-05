@@ -13,6 +13,8 @@
 // Boot-time check (double-reset detector): returns true when the device
 // was reset twice in quick succession via the RST button.
 // This board revision has no PRG/IO0 button, so double-RST is the entry.
+// The counter lives in NVS flash: RTC slow memory does NOT survive
+// EN-button resets on this board (RTC domain is power-cycled).
 // Only POWERON resets (RST button / power cycle) are counted - a crash
 // loop can never trigger OTA mode (the bootloader rollback handles that).
 bool ota_entry_requested(void);

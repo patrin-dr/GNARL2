@@ -16,15 +16,17 @@
 #include "oled.h"
 #include "version.h"
 
-#include <esp_attr.h>
+#include <nvs.h>
 
 #define TAG "ota"
 
-// Double-reset detector: press RST twice within ~4 s to enter OTA mode.
-// The counter lives in RTC slow memory, which survives EN-triggered resets
-// (but not a full power loss - fine for our purposes).
-#define DRD_WINDOW_MS 4000
-static RTC_DATA_ATTR uint32_t s_drd_count;
+// Double-reset detector: press RST twice within ~6 s to enter OTA mode.
+// The counter lives in NVS flash: RTC slow memory does NOT survive
+// EN-button resets on this board (RTC domain is power-cycled, visible
+// as PHY recalibration on every boot), so RTC_DATA_ATTR is useless here.
+#define DRD_WINDOW_MS 6000
+#define DRD_NVS_NS    "pickle"
+#define DRD_NVS_KEY   "drd"
 
 // Upload state (single connection at a time; the AP accepts max 2 clients)
 static volatile int s_progress = -1;   // -1 = idle, 0..99 = writing, 100 = done
@@ -39,7 +41,12 @@ static bool s_ota_active = false;
 // resets after that point count as a new "first press".
 static void drd_clear_task(void *arg) {
 	vTaskDelay(pdMS_TO_TICKS(DRD_WINDOW_MS));
-	s_drd_count = 0;
+	nvs_handle_t h;
+	if (nvs_open(DRD_NVS_NS, NVS_READWRITE, &h) == ESP_OK) {
+		nvs_erase_key(h, DRD_NVS_KEY);
+		nvs_commit(h);
+		nvs_close(h);
+	}
 	vTaskDelete(NULL);
 }
 
@@ -47,20 +54,33 @@ bool ota_entry_requested(void) {
 	// Count only RST-button / power-on resets. Crash resets (panic, WDT)
 	// reset the counter, so a crash-looping image can never end up in
 	// OTA mode by accident - the bootloader rollback handles that case.
-	if (esp_reset_reason() == ESP_RST_POWERON) {
-		s_drd_count++;
+	uint8_t count = 0;
+	nvs_handle_t h;
+	if (nvs_open(DRD_NVS_NS, NVS_READWRITE, &h) == ESP_OK) {
+		nvs_get_u8(h, DRD_NVS_KEY, &count);  // stays 0 if key absent
+		if (esp_reset_reason() == ESP_RST_POWERON) {
+			count++;
+		} else {
+			count = 0;
+		}
+		ESP_LOGI(TAG, "reset count %u (reason %d)", count, esp_reset_reason());
+		if (count >= 2) {
+			nvs_erase_key(h, DRD_NVS_KEY);
+			nvs_commit(h);
+			nvs_close(h);
+			ESP_LOGI(TAG, "double reset detected - entering OTA mode");
+			return true;
+		}
+		nvs_set_u8(h, DRD_NVS_KEY, count);
+		nvs_commit(h);
+		nvs_close(h);
 	} else {
-		s_drd_count = 0;
+		ESP_LOGW(TAG, "NVS open failed - double-reset detection disabled");
 	}
 
 	// Brief boot hint (the regular status screen redraws over it ~1.5 s later)
 	oled_ota_screen("GNARL2 " FW_GIT_SHA, "2x RST = OTA mode", -1);
 
-	if (s_drd_count >= 2) {
-		s_drd_count = 0;
-		ESP_LOGI(TAG, "double reset detected - entering OTA mode");
-		return true;
-	}
 	xTaskCreate(drd_clear_task, "drd", 1536, NULL, 1, NULL);
 	return false;
 }
