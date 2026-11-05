@@ -222,7 +222,7 @@ static void oled_draw_status(void) {
 	oled_text(0, 4, buf);
 
 	// Line 5: pump serial
-	snprintf(buf, sizeof(buf), "Pump %s", PUMP_ID);
+	snprintf(buf, sizeof(buf), "Pump ID %s", PUMP_ID);
 	oled_text(0, 5, buf);
 
 	// Line 6: link quality - percent of successful RX vs timeouts
