@@ -31,6 +31,11 @@
 #define OLED_PAGES      (OLED_HEIGHT / 8)
 #define OLED_LINE_CHARS (OLED_WIDTH / 6)
 
+// Pump RSSI bar: 8 segments, -60 dBm (or stronger) = full, -95 dBm = empty
+#define RSSI_BAR_WIDTH  8
+#define RSSI_BAR_FULL_DBM   (-60)
+#define RSSI_BAR_EMPTY_DBM  (-95)
+
 // Screensaver: display off after 5 minutes without BLE connection
 #define OLED_SCREENSAVER_US  (5LL * 60 * 1000000)
 // Long button press threshold (screen flip 180 degrees)
@@ -178,10 +183,6 @@ static void oled_text(int x, int line, const char *s) {
 	}
 }
 
-static void oled_hline(int page) {
-	memset(fb + page * OLED_WIDTH, 0x01, OLED_WIDTH); // dotted line at top of page
-}
-
 //---------------------------------------------------------------------
 // Status screen
 //---------------------------------------------------------------------
@@ -203,7 +204,6 @@ static void oled_draw_status(void) {
 			fb[i] ^= 0xFF;  // invert page 0: solid bar, dark text
 		}
 	}
-	oled_hline(1);
 
 	// Line 2: battery
 	uint16_t mv = get_battery_voltage();
@@ -217,15 +217,28 @@ static void oled_draw_status(void) {
 		 (unsigned long)(f / 1000000), (unsigned long)((f % 1000000) / 1000));
 	oled_text(0, 3, buf);
 
-	// Line 4: pump link - averaged RSSI + seconds since last pump response
+	// Line 4: pump link - RSSI bar + seconds since last pump response
 	if (last_pump_rx_us == 0) {
 		snprintf(buf, sizeof(buf), "Pump --- no data");
 	} else {
+		int filled = (last_pump_rssi_avg - RSSI_BAR_EMPTY_DBM)
+			 * RSSI_BAR_WIDTH / (RSSI_BAR_FULL_DBM - RSSI_BAR_EMPTY_DBM);
+		if (filled < 0) filled = 0;
+		if (filled > RSSI_BAR_WIDTH) filled = RSSI_BAR_WIDTH;
+
+		char bar[RSSI_BAR_WIDTH + 3];
+		bar[0] = '[';
+		for (int i = 0; i < RSSI_BAR_WIDTH; i++) {
+			bar[1 + i] = (i < filled) ? '=' : '-';
+		}
+		bar[RSSI_BAR_WIDTH + 1] = ']';
+		bar[RSSI_BAR_WIDTH + 2] = '\0';
+
 		uint32_t age_s = (uint32_t)((esp_timer_get_time() - last_pump_rx_us) / 1000000);
 		if (age_s > 9999) {
-			snprintf(buf, sizeof(buf), "Pump %ddBm  old", last_pump_rssi_avg);
+			snprintf(buf, sizeof(buf), "Pump %s old", bar);
 		} else {
-			snprintf(buf, sizeof(buf), "Pump %ddBm %lus", last_pump_rssi_avg, (unsigned long)age_s);
+			snprintf(buf, sizeof(buf), "Pump %s %lus", bar, (unsigned long)age_s);
 		}
 	}
 	oled_text(0, 4, buf);
