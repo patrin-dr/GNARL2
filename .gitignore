@@ -57,6 +57,7 @@ Thumbs.db
 
 # ESP-IDF
 /build
+sdkconfig
 sdkconfig.old
 
 # AI assistant artifacts
