@@ -349,8 +349,7 @@ int read_rssi(void) {
 typedef void wait_fn_t(int);
 
 static int rx_common(wait_fn_t wait_fn, uint8_t *buf, int count, int timeout) {
-	// TEMP-DEBUG: phase logs to localize spi_device_transmit assert (remove after fix)
-	ESP_LOGI(TAG, "rx: enter (timeout %d ms)", timeout);
+	ESP_LOGD(TAG, "rx: enter (timeout %d ms)", timeout);
 	// Use unlimited length packet format (data sheet section 4.2.13.2).
 	write_register(REG_PACKET_CONFIG_1, PACKET_FORMAT_FIXED);
 	write_register(REG_PAYLOAD_LENGTH, 0);
@@ -360,18 +359,18 @@ static int rx_common(wait_fn_t wait_fn, uint8_t *buf, int count, int timeout) {
 #endif
 	ESP_LOGD(TAG, "starting receive");
 	set_mode_receive();
-	ESP_LOGI(TAG, "rx: RX mode set");
+	ESP_LOGD(TAG, "rx: RX mode set");
 	if (!packet_seen()) {
 		// Stay in RX mode.
 		wait_fn(timeout);
-		ESP_LOGI(TAG, "rx: wait done, sync=%d", packet_seen());
+		ESP_LOGD(TAG, "rx: wait done, sync=%d", packet_seen());
 		if (!packet_seen()) {
 			set_mode_sleep();
 			ESP_LOGD(TAG, "receive timeout");
 			return 0;
 		}
 	}
-	ESP_LOGI(TAG, "rx: sync matched");
+	ESP_LOGD(TAG, "rx: sync matched");
 	last_rssi = read_register(REG_RSSI);
 
 	// FIFO read with absolute timeout (max 80ms for reading)
@@ -406,9 +405,9 @@ static int rx_common(wait_fn_t wait_fn, uint8_t *buf, int count, int timeout) {
 		buf[n++] = b;
 		w = 0;
 	}
-	ESP_LOGI(TAG, "rx: FIFO read done, %d bytes", n);
+	ESP_LOGD(TAG, "rx: FIFO read done, %d bytes", n);
 	set_mode_sleep();
-	ESP_LOGI(TAG, "rx: exit");
+	ESP_LOGD(TAG, "rx: exit");
 	clear_fifo();
 #ifndef USE_POLLING
 	gpio_intr_disable(LORA_DIO2);
