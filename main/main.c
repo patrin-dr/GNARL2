@@ -7,8 +7,11 @@
 #include "adc.h"
 #include "led.h"
 #include "oled.h"
+#include "ota.h"
 #include "rfm95.h"
 #include "version.h"
+
+#include <esp_ota_ops.h>
 
 #include "soc/soc.h"
 #ifndef CONFIG_IDF_TARGET_ESP32C6
@@ -18,7 +21,17 @@
 #include "pump_config.h"
 // #define PUMP_FREQUENCY 868250000
 
-
+#if CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
+// Anti-brick: a fresh OTA image must prove it is stable.
+// If the device crashes or reboots within 60 s of boot, the bootloader
+// automatically rolls back to the previous working image.
+static void ota_confirm_task(void *arg) {
+	vTaskDelay(pdMS_TO_TICKS(60000));
+	esp_err_t err = esp_ota_mark_app_valid_cancel_rollback();
+	ESP_LOGI(TAG, "OTA self-check passed: mark_app_valid -> %s", esp_err_to_name(err));
+	vTaskDelete(NULL);
+}
+#endif
 
 void app_main(void) {
 #ifndef CONFIG_IDF_TARGET_ESP32C6
@@ -44,6 +57,14 @@ void app_main(void) {
 		nvs_err = nvs_flash_init();
 	}
 	ESP_ERROR_CHECK(nvs_err);
+
+	// OTA entry: double-reset detector - press RST twice within ~4 s
+	// to enter update mode (WiFi AP "GNARL-OTA", http://192.168.4.1).
+	// Placed after NVS init: WiFi calibration data lives in NVS.
+	// In OTA mode radio/BLE are NOT started (saves power, avoids conflicts).
+	if (ota_entry_requested()) {
+		ota_start();  // never returns
+	}
 
 	// Initialize GPIO ISR service (required for radio interrupt handling)
 	// Must be called once before rfm95_init()
@@ -75,4 +96,11 @@ void app_main(void) {
 	adc_init();
 	oled_init();
 	gnarl_init();
+
+#if CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
+	// Radio, OLED and BLE are up - start the 60 s self-validation timer.
+	// If we crash or reboot before it fires, the bootloader rolls back
+	// to the previous working image.
+	xTaskCreate(ota_confirm_task, "ota_cf", 2048, NULL, 1, NULL);
+#endif
 }
