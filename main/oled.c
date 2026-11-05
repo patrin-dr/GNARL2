@@ -191,8 +191,8 @@ static void oled_draw_status(void) {
 	oled_clear();
 
 	// Line 0: name + BLE state
-	snprintf(buf, sizeof(buf), "%-8s BLE:%s", BLE_NAME,
-		 ble_is_connected() ? "CONN" : "WAIT");
+	snprintf(buf, sizeof(buf), "%s BLE:%s", BLE_NAME,
+		 ble_is_connected() ? "CONNECTED" : "WAITING");
 	oled_text(0, 0, buf);
 	oled_hline(1);
 
