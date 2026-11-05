@@ -16,7 +16,7 @@ on:
         required: false
         type: string
   push:
-    branches: [main]
+    branches: [main, ota]
     tags: ["v*"]
     paths-ignore: ["**.md"]
 
@@ -92,6 +92,15 @@ jobs:
         with:
           name: rileylink-ttgo
           path: build/rileylink-ttgo.bin
+          retention-days: 30
+
+      # Образ приложения для OTA-обновления (заливается через Wi-Fi,
+      # страница http://192.168.4.1 в режиме OTA)
+      - name: Upload OTA app image
+        uses: actions/upload-artifact@v4
+        with:
+          name: rileylink-ttgo-ota
+          path: build/pickle-stable.bin
           retention-days: 30
 
       # ELF + MAP нужны для декодирования backtrace (addr2line) при крэшах на железе
