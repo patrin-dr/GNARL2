@@ -230,6 +230,10 @@ Up 02:34:17           <- uptime
 Pump RSSI is smoothed with an exponential moving average (~4 packets) — handy for
 finding a good placement for the device.
 
+**Connection-loss alert:** while BLE is disconnected, the top status line blinks
+inverted (~1 Hz) — you can spot a dropped link at a glance. The screensaver
+still turns the display off after 5 minutes without a connection.
+
 For the first ~1.5 s after boot a hint screen shows
 `GNARL2 <build> / 2x RST = OTA mode` — it also confirms the device reached the
 app (important for OTA entry timing).
