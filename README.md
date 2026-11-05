@@ -217,7 +217,7 @@ The onboard SSD1306 128×64 shows (redrawn every second while BLE-connected,
 every 5 s when idle):
 
 ```
-MYGN BLE:CONNECTED  <- BLE name + state
+MYGN    BLE:CONNECTED  <- BLE name (left) + state (right)
 ------------------
 Batt 4.02V     87%    <- battery
 Freq 868.250 MHz      <- radio frequency
