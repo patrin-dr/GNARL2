@@ -22,6 +22,9 @@
 #include "led.h"
 #include "rfm95.h"
 
+#include <nvs_flash.h>
+#include <nvs.h>
+
 #ifdef LED_IS_WS2812
 #include "led_strip.h"
 static led_strip_handle_t led_strip = NULL;
