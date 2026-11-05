@@ -22,9 +22,6 @@
 #include "led.h"
 #include "rfm95.h"
 
-#include <nvs_flash.h>
-#include <nvs.h>
-
 #ifdef LED_IS_WS2812
 #include "led_strip.h"
 static led_strip_handle_t led_strip = NULL;
@@ -427,6 +424,11 @@ static inline void reverse_four_bytes(void *ptr) {
 static uint8_t pkt_buf[PKT_BUF_SIZE];
 
 static void send(uint8_t *data, int len, int repeat_count, int delay_ms) {
+	if (len <= 0) {
+		ESP_LOGE(TAG, "send: invalid length %d", len);
+		send_code(RESPONSE_CODE_PARAM_ERROR);
+		return;
+	}
 	if (len > 0 && data[len-1] == 0) {
 		len--;
 	}
@@ -547,6 +549,11 @@ static void rx_common(int n, int rssi) {
 }
 
 static void get_packet(const uint8_t *buf, int len) {
+	if (len < (int)sizeof(get_packet_cmd_t)) {
+		ESP_LOGE(TAG, "get_packet: length %d < header %d", len, (int)sizeof(get_packet_cmd_t));
+		send_code(RESPONSE_CODE_PARAM_ERROR);
+		return;
+	}
 	get_packet_cmd_t *p = (get_packet_cmd_t *)buf;
 	reverse_four_bytes(&p->timeout_ms);
 	ESP_LOGD(TAG, "get_packet: listen_channel %d timeout_ms %lu",
@@ -556,6 +563,11 @@ static void get_packet(const uint8_t *buf, int len) {
 }
 
 static void send_packet(const uint8_t *buf, int len) {
+	if (len < (int)sizeof(send_packet_cmd_t)) {
+		ESP_LOGE(TAG, "send_packet: length %d < header %d", len, (int)sizeof(send_packet_cmd_t));
+		send_code(RESPONSE_CODE_PARAM_ERROR);
+		return;
+	}
 	send_packet_cmd_t *p = (send_packet_cmd_t *)buf;
 	reverse_two_bytes(&p->delay_ms);
 	ESP_LOGD(TAG, "send_packet: len %d send_channel %d repeat_count %d delay_ms %d",
@@ -566,6 +578,11 @@ static void send_packet(const uint8_t *buf, int len) {
 }
 
 static void send_and_listen(const uint8_t *buf, int len) {
+	if (len < (int)sizeof(send_and_listen_cmd_t)) {
+		ESP_LOGE(TAG, "send_and_listen: length %d < header %d", len, (int)sizeof(send_and_listen_cmd_t));
+		send_code(RESPONSE_CODE_PARAM_ERROR);
+		return;
+	}
 	send_and_listen_cmd_t *p = (send_and_listen_cmd_t *)buf;
 	reverse_two_bytes(&p->delay_ms);
 	reverse_four_bytes(&p->timeout_ms);
@@ -859,6 +876,11 @@ static void gnarl_loop(void *unused) {
 			ESP_LOGE(TAG, "unimplemented rfspy command %d", req.command);
 			break;
 		}
+		// Low-stack watchdog: warn early if gnarl task runs out of stack
+		UBaseType_t hwm = uxTaskGetStackHighWaterMark(NULL);
+		if (hwm < 512) {  // words; 512 words = 2 KB free
+			ESP_LOGW(TAG, "LOW STACK in gnarl task: %u bytes free", (unsigned)(hwm * sizeof(StackType_t)));
+		}
 		// Yield to IDLE task to prevent WDT starvation if queue is flooded
 		vTaskDelay(1);
 	}
@@ -868,6 +890,7 @@ void start_gnarl_task(void) {
 	request_queue = xQueueCreate(QUEUE_LENGTH, sizeof(rfspy_request_t));
 	// Start radio task with moderate priority. Too high priority can starve NimBLE host and trigger disconnects.
 	// Lower priority to avoid starving BLE host task.
-	xTaskCreate(gnarl_loop, "PICKL", 8192, 0, tskIDLE_PRIORITY + 1, 0);
+	// 12 KB stack: rfspy_request_t (~300 B) on stack + deep TX/RX call chain + printf formatting.
+	xTaskCreate(gnarl_loop, "PICKL", 12288, 0, tskIDLE_PRIORITY + 1, 0);
 	ESP_LOGI(TAG, "gnarl task started with priority %d", tskIDLE_PRIORITY + 1);
 }
