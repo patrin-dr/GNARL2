@@ -321,9 +321,53 @@ void oled_init(void) {
 	xTaskCreate(oled_task, "oled", 3072, NULL, 3, NULL);
 }
 
+//---------------------------------------------------------------------
+// Standalone message screen (OTA mode, boot-time OTA prompt)
+//---------------------------------------------------------------------
+
+static bool ota_screen_inited = false;
+
+void oled_ota_screen(const char *line1, const char *line2, int progress) {
+	if (!ota_screen_inited) {
+		// A second init later (normal boot path, oled_task -> oled_hw_init)
+		// is harmless: i2c_driver_install just returns ESP_ERR_INVALID_STATE.
+		oled_load_flip();
+		oled_hw_init();
+		ota_screen_inited = true;
+		display_on = true;
+		last_activity_us = esp_timer_get_time();
+	}
+
+	oled_clear();
+	if (line1) {
+		oled_text(0, 0, line1);
+	}
+	if (line2) {
+		oled_text(0, 2, line2);
+	}
+	if (progress >= 0) {
+		// "[=========     ]  63%" on line 5
+		char buf[OLED_LINE_CHARS + 2];
+		const int width = OLED_LINE_CHARS - 8;
+		int filled = progress * width / 100;
+		int pos = 0;
+		buf[pos++] = '[';
+		for (int i = 0; i < width; i++) {
+			buf[pos++] = (i < filled) ? '=' : ' ';
+		}
+		snprintf(buf + pos, sizeof(buf) - pos, "] %3d%%", progress);
+		oled_text(0, 5, buf);
+	}
+	oled_flush();
+}
+
 #else // !OLED_ENABLE
 
 void oled_init(void) {
+	// OLED disabled in module.h
+}
+
+void oled_ota_screen(const char *line1, const char *line2, int progress) {
 	// OLED disabled in module.h
 }
 
