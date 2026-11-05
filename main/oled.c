@@ -43,6 +43,7 @@ static uint8_t fb[OLED_WIDTH * OLED_PAGES]; // framebuffer: page-major
 static bool display_on = true;
 static bool screen_flipped = false;         // 180-degree rotation
 static int64_t last_activity_us = 0;        // last BLE connection / button press
+static bool blink_on = false;               // BLE-loss blink phase (line 0)
 
 static void oled_apply_orientation(void);
 
@@ -190,11 +191,18 @@ static void oled_draw_status(void) {
 
 	oled_clear();
 
-	// Line 0: name (left) + BLE state (flush right)
+	// Line 0: name (left) + BLE state (flush right).
+	// Connection-loss alert: while BLE is down the whole line
+	// inverts every other redraw (~1 Hz blink).
 	snprintf(buf, sizeof(buf), "%s%*s", BLE_NAME,
 		 OLED_LINE_CHARS - (int)strlen(BLE_NAME),
 		 ble_is_connected() ? "BLE:CONNECTED" : "BLE:WAITING");
 	oled_text(0, 0, buf);
+	if (!ble_is_connected() && blink_on) {
+		for (int i = 0; i < OLED_WIDTH; i++) {
+			fb[i] ^= 0xFF;  // invert page 0: solid bar, dark text
+		}
+	}
 	oled_hline(1);
 
 	// Line 2: battery
@@ -305,11 +313,12 @@ static void oled_task(void *arg) {
 			oled_set_power(false);
 		}
 
-		// --- Redraw: every 1s while connected (live RSSI/age), 5s when idle ---
-		// Full flush is ~1 KB over I2C (~23 ms); idle data (battery) changes
-		// only once a minute, so slow redraw saves bus activity and power.
-		int64_t redraw_interval_us = conn ? 1000000 : 5000000;
+		// --- Redraw: every 1 s while connected (live RSSI/age),
+		// every 500 ms when idle - that sets the BLE-line blink rate.
+		// Full flush is ~1 KB over I2C (~23 ms).
+		int64_t redraw_interval_us = conn ? 1000000 : 500000;
 		if (display_on && (now - last_draw_us) >= redraw_interval_us) {
+			blink_on = !blink_on;
 			oled_draw_status();
 			last_draw_us = now;
 		}
