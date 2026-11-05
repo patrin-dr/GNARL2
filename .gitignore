@@ -50,6 +50,15 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# ESP-IDF
 /build
+sdkconfig.old
+
+# AI assistant artifacts
 CODE_ANALYSIS.md
 CLAUDE.md
