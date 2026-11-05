@@ -19,7 +19,6 @@
 #endif
 #include <driver/gpio.h>
 #include "pump_config.h"
-// #define PUMP_FREQUENCY 868250000
 
 #if CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
 // Anti-brick: a fresh OTA image must prove it is stable.
@@ -46,7 +45,7 @@ void app_main(void) {
 	// Increase NimBLE verbosity to help diagnose disconnects
 	esp_log_level_set("NimBLE", ESP_LOG_ERROR);
 	ESP_LOGI(TAG, "%s (build %s)", SUBG_RFSPY_VERSION, FW_GIT_SHA);
-	
+
 	// Initialize NVS flash first (required for LED mode and BLE)
 	// Recover from corrupted or full NVS (e.g. power loss during write):
 	// erase and retry once instead of aborting on every boot.
@@ -58,7 +57,7 @@ void app_main(void) {
 	}
 	ESP_ERROR_CHECK(nvs_err);
 
-	// OTA entry: double-reset detector - press RST twice within ~4 s
+	// OTA entry: double-reset detector - press RST twice within ~6 s
 	// to enter update mode (WiFi AP "GNARL-OTA", http://192.168.4.1).
 	// Placed after NVS init: WiFi calibration data lives in NVS.
 	// In OTA mode radio/BLE are NOT started (saves power, avoids conflicts).
@@ -83,16 +82,16 @@ void app_main(void) {
 	} else {
 		led_off(); // AUTO mode starts with LED off
 	}
-	
+
 	rfm95_init();
 	uint8_t v = read_version();
 	ESP_LOGD(TAG, "radio version %d.%d", version_major(v), version_minor(v));
-	
+
 	// Load saved frequency from NVS (or use default PUMP_FREQUENCY)
 	uint32_t startup_freq = gnarl_load_frequency();
 	set_frequency(startup_freq);
 	ESP_LOGD(TAG, "frequency set to %lu Hz", (unsigned long)read_frequency());
-	
+
 	adc_init();
 	oled_init();
 	gnarl_init();

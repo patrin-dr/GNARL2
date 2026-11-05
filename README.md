@@ -15,14 +15,15 @@ This project uses code from:
 
 ## Fork highlights
 
+- **OTA update over Wi-Fi** — double-press RST, no cable or computer needed
+- **Automatic rollback** — if a fresh OTA image doesn't confirm itself within
+  60 seconds, the bootloader reverts to the previous working firmware
+- **OLED status screen** — battery, frequency, pump RSSI, link quality, uptime
 - **TTGO LoRa32 V1.6.1 as the default board** (selected in `include/module.h`)
-- **GitHub Actions CI** producing a single flashable `.bin` (bootloader + partition
-  table + app); pump ID is injected at build time from workflow input or a secret —
-  the real serial number is never committed
-- **OLED status screen** (onboard SSD1306): battery, frequency, pump RSSI, link
-  quality, uptime; BOOT button controls power and 180° flip (persisted in NVS)
+- **GitHub Actions CI** producing flashable binaries; pump ID injected at build
+  time from workflow input or a secret
 - **Power optimizations:** CPU @ 80 MHz, tickless idle, BLE light-sleep when
-  disconnected, slow BLE advertising (500–800 ms) when idle, OLED screensaver
+  disconnected, slow BLE advertising when idle, OLED screensaver
 - **Robustness:** NVS corruption auto-recovery, full radio reconfiguration after
   hardware-reset recovery, battery deep-sleep protection at 3.3 V
 
@@ -91,9 +92,18 @@ idf.py build
 
 ## Prebuilt Firmware via GitHub Actions (no ESP-IDF needed)
 
-The workflow (`.github/workflows/firmware.yml`) builds a single
-`rileylink-ttgo.bin` (flash at offset `0x0`). Builds run automatically on every
-push to `main`, manually with parameters, and publish a release on `v*` tags.
+The workflow (`.github/workflows/firmware.yml`) runs on every push to `main`,
+manually with parameters, and publishes a release on `v*` tags.
+Each build produces three artifacts:
+
+| Artifact | Contents | Purpose |
+|----------|----------|---------|
+| `rileylink-ttgo` | `rileylink-ttgo.bin` | **Merged image** (bootloader + partition table + app) — USB flashing at `0x0` only |
+| `rileylink-ttgo-ota` | `pickle-stable.bin` | **App image for OTA** — uploaded via the Wi-Fi page in OTA mode |
+| `rileylink-ttgo-debug` | ELF + MAP | For decoding backtraces (addr2line) after crashes |
+
+⚠️ **Don't mix them up:** only `pickle-stable.bin` works for OTA. The merged
+image won't fit an OTA slot.
 
 ### One-time setup
 
@@ -101,7 +111,7 @@ push to `main`, manually with parameters, and publish a release on `v*` tags.
    - `PUMP_ID` — your pump serial (6 digits)
    - `PUMP_FREQUENCY` — optional, defaults to `868250000`
 2. Run **Actions → firmware → Run workflow** (optionally overriding `pump_id`,
-   `pump_frequency`, `ble_name`) — the `.bin` appears in the run artifacts.
+   `pump_frequency`, `ble_name`) — binaries appear in the run artifacts.
    Or push a tag for a release:
    ```bash
    git tag v0.1 && git push origin v0.1
@@ -110,17 +120,56 @@ push to `main`, manually with parameters, and publish a release on `v*` tags.
 `pump_id` is validated (exactly 6 digits) before the build starts, and the commit
 SHA is stamped into the firmware (`FW_GIT_SHA`) and printed in the boot log.
 
-### Flashing
+### Flashing via USB (first time / recovery)
 
 ```bash
 pip install esptool
 esptool.py --port /dev/ttyUSB0 write_flash 0x0 rileylink-ttgo.bin
 ```
 
-- Find the port: `ls /dev/ttyUSB* /dev/ttyACM*` (Linux), `ls /dev/cu.usbserial-*`
+- Find the port: `ls /dev/ttyUSB* /dev/ttyACM*` (Linux), `ls /dev/cu.wchusbserial*`
   (macOS), `COMx` (Windows — CH9102 driver may be required).
-- If flashing fails to start, hold the **BOOT** button while running esptool.
+- If flashing fails to start, hold the **BOOT** button while running esptool
+  (boards without a BOOT button usually enter download mode on their own).
 - **Attach the 868 MHz antenna before powering on!**
+- USB flashing is needed only once. All later updates happen over Wi-Fi (below).
+
+## OTA Update over Wi-Fi
+
+The flash is partitioned with two app slots (`ota_0` / `ota_1`) — a new image is
+written to the free slot while the old one stays untouched as a fallback.
+
+### How to update
+
+1. **Enter OTA mode — double-press RST:**
+   - press RST **once**;
+   - **wait for the OLED** to light up with `GNARL2 <build> / 2x RST = OTA mode`
+     (~1–2 s);
+   - press RST a **second** time (within ~5 s of the first).
+
+   ⚠️ Don't press the second time before the screen lights up: the counter lives
+   in the app, and a press within ~0.5 s of the first lands before it starts —
+   the second boot then counts as the first.
+2. Connect to Wi-Fi **`GNARL-OTA`**, password **`rileylink`**.
+3. Open http://192.168.4.1, pick **`pickle-stable.bin`**
+   (the `rileylink-ttgo-ota` artifact of the desired build) → **Upload**.
+4. Progress shows on the page and on the OLED (`[===   ] NN%`).
+   The device reboots automatically when done.
+
+### The first 60 seconds — self-validation
+
+A freshly updated image boots in "pending verification" state. If it survives
+60 seconds, it marks itself valid permanently. **If you press RST, cut power or
+the firmware crashes within those 60 seconds, the bootloader automatically rolls
+back to the previous image.**
+
+That's also the manual rollback method: after an OTA update, press RST once
+within the first 60 seconds.
+
+### If an OTA upload fails midway
+
+No harm done: a truncated image won't pass validation, and the device stays on
+the old firmware. Just re-enter OTA mode and upload again.
 
 ## Building from Source
 
@@ -135,7 +184,7 @@ alias get_idf='. ~/esp/esp-idf/export.sh'   # add to ~/.bashrc or ~/.zshrc
 
 ### 2. Pump settings
 
-The repo contains `include/pump_config.h` with a placeholder (`PUMP_ID "000000"`).
+The repo contains `include/pump_config.h` with a default `PUMP_ID`.
 For CI builds the file is overwritten from the workflow input / secret.
 For local builds, edit it:
 
@@ -149,7 +198,8 @@ For local builds, edit it:
 #endif
 ```
 
-**Never commit the real pump serial** — keep the `000000` placeholder in the repo.
+**If you fork this repo, don't commit your real pump serial** — keep a
+placeholder in git and inject the real one via CI secrets.
 
 ### 3. Build & flash
 
@@ -172,7 +222,7 @@ MYGN     BLE:CONN     <- BLE name + state
 Batt 4.02V     87%    <- battery
 Freq 868.250 MHz      <- radio frequency
 Pump -78dBm 5s        <- averaged pump RSSI + last response age
-Pump 123456           <- pump serial compiled into firmware
+Pump ID 123456        <- pump serial compiled into firmware
 Link 98% ok           <- successful RX share
 Up 02:34:17           <- uptime
 ```
@@ -180,10 +230,17 @@ Up 02:34:17           <- uptime
 Pump RSSI is smoothed with an exponential moving average (~4 packets) — handy for
 finding a good placement for the device.
 
+For the first ~1.5 s after boot a hint screen shows
+`GNARL2 <build> / 2x RST = OTA mode` — it also confirms the device reached the
+app (important for OTA entry timing).
+
 ### BOOT button (GPIO0)
 
 - **Short press** — display on/off
 - **Long press (>1.5 s)** — flip the screen 180° (saved to NVS, survives reboots)
+
+Some boards ship without a physical BOOT/PRG button — then the only entry is
+OTA mode via double-RST; normal bridge operation is unaffected.
 
 ## Power Management
 
@@ -198,12 +255,20 @@ finding a good placement for the device.
   disabled to avoid reboot loops on a low battery)
 - CPU @ 80 MHz — more than enough for SPI @ 5 MHz + BLE
 
-## Usage
+## Usage with AAPS / iAPS / Loop
 
 1. Flash the firmware
 2. Open iAPS / Loop / AndroidAPS
-3. Add a new RileyLink device (appears under the configured BLE name)
+3. Add a new RileyLink device, **picking it from the discovered list**
 4. The device auto-connects and syncs with the pump
+
+⚠️ **Don't use "Pair RileyLink" (BLE bonding)** — the phone drops such a
+connection and the app hangs at "Initializing RileyLink". Bonding isn't needed:
+just pick the device from the list.
+
+⚠️ **After a bridge reboot (RST or OTA) the app may not reconnect on its own.**
+Remedies: rescan in the RileyLink settings, toggle Bluetooth, or — worst case —
+restart the app. That's app behavior, not a firmware issue.
 
 ## Troubleshooting
 
@@ -213,10 +278,21 @@ finding a good placement for the device.
 - Check the serial monitor for errors (the boot log prints the build SHA)
 
 ### Pump not responding
-- Verify the `pump_id` used at build time — the OLED `Pump …` line shows the
+- Verify the `pump_id` used at build time — the OLED `Pump ID …` line shows the
   compiled-in serial
 - Check the frequency (usually 868250000 Hz for EU pumps)
 - Keep the pump within ~1–2 m; watch `Pump -XXdBm Ns` on the screen
+
+### Double-RST doesn't enter OTA mode
+- You're pressing too fast: the second press must come **after the screen lights
+  up** (~1–2 s after the first), not earlier
+- Check the serial log for `ota: reset count N (reason R)` — the counter only
+  increments on button/power resets (reason 1)
+
+### OTA page won't open
+- Make sure you're connected to the `GNARL-OTA` Wi-Fi (mobile data may hijack
+  the traffic — disable LTE temporarily)
+- Use http://192.168.4.1 (http, not https)
 
 ### Watchdog timeout
 - Check `CONFIG_ESP_TASK_WDT_TIMEOUT_S=30` in sdkconfig.defaults
@@ -226,15 +302,17 @@ finding a good placement for the device.
 
 | File | Description |
 |------|-------------|
-| `main/main.c` | Entry point, hardware init, NVS recovery |
+| `main/main.c` | Entry point, hardware init, NVS recovery, OTA self-validation (60 s) |
+| `main/ota.c`, `main/ota.h` | OTA mode: double-reset detector (NVS counter), Wi-Fi AP, HTTP upload |
 | `main/gnarl.c` | RFSpy protocol handler |
 | `main/ble.c` | NimBLE GATT services |
 | `main/adc.c` | Battery monitoring + deep-sleep protection |
-| `main/oled.c` | SSD1306 status screen |
+| `main/oled.c` | SSD1306 status screen, OTA screens, button |
+| `partitions.csv` | Flash layout: two app slots (ota_0/ota_1) + otadata |
 | `components/radio/rfm95.c` | RFM95/SX1276 driver |
 | `components/medtronic/` | Medtronic protocol |
 | `include/module.h` | GPIO pins, board selection (TTGO by default) |
-| `include/pump_config.h` | Pump settings (placeholder; real ID set via CI) |
+| `include/pump_config.h` | Pump settings (default; overridden by CI) |
 | `.github/workflows/firmware.yml` | CI build & release |
 
 ## License
