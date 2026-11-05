@@ -18,6 +18,7 @@
 #include "gnarl.h"
 #include "adc.h"
 #include "pump_config.h"
+#include "version.h"
 #include "oled_font.h"
 
 #ifndef OLED_ADDR
@@ -40,7 +41,7 @@
 #define BLE_BAR_EMPTY_DBM   (-90)
 
 // Pump link-loss alert: line blinks when no pump response for this long
-#define PUMP_STALE_S        60
+#define PUMP_STALE_S        300
 // Low-battery alert: Batt line blinks below this charge level
 #define BATT_LOW_PERCENT    20
 
@@ -57,6 +58,9 @@ static bool display_on = true;
 static bool screen_flipped = false;         // 180-degree rotation
 static int64_t last_activity_us = 0;        // last BLE connection / button press
 static bool blink_on = false;               // blink phase (line alerts)
+
+static int ble_rssi_ema_x8 = 0;             // BLE RSSI EMA, x8 fixed point
+static bool ble_rssi_ema_valid = false;
 
 static void oled_apply_orientation(void);
 
@@ -248,16 +252,25 @@ static void oled_draw_status(void) {
 
 	// Line 3: BLE link - RSSI bar + dBm (phone signal strength).
 	// Replaces the frequency line: the frequency is static after boot.
+	// RSSI is EMA-smoothed (alpha 1/4) so the bar doesn't jump between redraws.
 	if (ble_is_connected()) {
 		int8_t r = ble_get_rssi();
 		if (r == 127) {
 			snprintf(buf, sizeof(buf), "BLE  rssi n/a");
 		} else {
 			char bar[RSSI_BAR_WIDTH + 3];
-			make_bar(bar, bar_filled(r, BLE_BAR_EMPTY_DBM, BLE_BAR_FULL_DBM));
-			snprintf(buf, sizeof(buf), "BLE  %s %ddBm", bar, (int)r);
+			if (!ble_rssi_ema_valid) {
+				ble_rssi_ema_x8 = (int)r * 8;
+				ble_rssi_ema_valid = true;
+			} else {
+				ble_rssi_ema_x8 += ((int)r * 8 - ble_rssi_ema_x8) / 4;
+			}
+			int rs = (ble_rssi_ema_x8 + (ble_rssi_ema_x8 < 0 ? -4 : 4)) / 8;
+			make_bar(bar, bar_filled(rs, BLE_BAR_EMPTY_DBM, BLE_BAR_FULL_DBM));
+			snprintf(buf, sizeof(buf), "BLE  %s %ddBm", bar, rs);
 		}
 	} else {
+		ble_rssi_ema_valid = false;  // restart smoothing on next connect
 		snprintf(buf, sizeof(buf), "BLE  no link");
 	}
 	oled_text(0, 3, buf);
@@ -291,11 +304,13 @@ static void oled_draw_status(void) {
 	}
 
 	// Line 6: link quality - percent of successful RX over the last
-	// ~100 packets (sliding window: reflects current conditions)
+	// ~100 packets (sliding window: reflects current conditions).
+	// Until the first packets arrive, shows the build SHA instead -
+	// handy for checking which firmware is actually running (OTA).
 	{
 		int q = radio_link_quality();
 		if (q < 0) {
-			snprintf(buf, sizeof(buf), "Link ---");
+			snprintf(buf, sizeof(buf), "Link --- %s", FW_GIT_SHA);
 		} else {
 			snprintf(buf, sizeof(buf), "Link %d%% ok", q);
 		}

@@ -12,6 +12,7 @@
 #include "version.h"
 
 #include <esp_ota_ops.h>
+#include <esp_system.h>
 
 #include "soc/soc.h"
 #ifndef CONFIG_IDF_TARGET_ESP32C6
@@ -19,6 +20,26 @@
 #endif
 #include <driver/gpio.h>
 #include "pump_config.h"
+
+// Human-readable reset reason for the boot log: helps tell WDT/panic
+// resets from button/power ones during soak tests. Local helper instead
+// of esp_reset_reason_to_name() to compile on any IDF 5.x / target.
+static const char *reset_reason_name(esp_reset_reason_t r) {
+	switch (r) {
+	case ESP_RST_UNKNOWN:   return "unknown";
+	case ESP_RST_POWERON:   return "power-on";
+	case ESP_RST_EXT:       return "ext-pin";
+	case ESP_RST_SW:        return "software";
+	case ESP_RST_PANIC:     return "panic";
+	case ESP_RST_INT_WDT:   return "int-wdt";
+	case ESP_RST_TASK_WDT:  return "task-wdt";
+	case ESP_RST_WDT:       return "wdt";
+	case ESP_RST_DEEPSLEEP: return "deep-sleep";
+	case ESP_RST_BROWNOUT:  return "brownout";
+	case ESP_RST_SDIO:      return "sdio";
+	default:                return "?";
+	}
+}
 
 #if CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
 // Anti-brick: a fresh OTA image must prove it is stable.
@@ -45,6 +66,7 @@ void app_main(void) {
 	// Increase NimBLE verbosity to help diagnose disconnects
 	esp_log_level_set("NimBLE", ESP_LOG_ERROR);
 	ESP_LOGI(TAG, "%s (build %s)", SUBG_RFSPY_VERSION, FW_GIT_SHA);
+	ESP_LOGI(TAG, "reset reason: %s (%d)", reset_reason_name(esp_reset_reason()), (int)esp_reset_reason());
 
 	// Initialize NVS flash first (required for LED mode and BLE)
 	// Recover from corrupted or full NVS (e.g. power loss during write):

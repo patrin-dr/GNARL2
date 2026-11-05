@@ -227,15 +227,18 @@ Up 02:34:17           <- uptime
 ```
 
 The RSSI behind the pump bar is smoothed with an exponential moving average
-(~4 packets). Pump bar scale: -95 dBm = empty, -60 dBm or stronger = full;
+(~4 packets); the BLE bar is smoothed the same way (EMA, alpha 1/4).
+Pump bar scale: -95 dBm = empty, -60 dBm or stronger = full;
 BLE bar scale: -90 dBm = empty, -40 dBm or stronger = full
 (5 segments ≈ 20% each) — handy for finding a good placement for the device.
 
 `Link` is a sliding window over the last ~100 pump receptions, so it reflects
-the current link quality rather than a lifetime average.
+the current link quality rather than a lifetime average. Until the first pump
+packets arrive it shows the build SHA instead (`Link --- abc1234`) — the same
+stamp that is printed in the boot log.
 
 **Blink alerts** (inverted line): the top line blinks while BLE is
-disconnected, `Pump` blinks when the pump has been silent for over 60 s,
+disconnected, `Pump` blinks when the pump has been silent for over 5 min,
 and `Batt` blinks below 20% charge. The screensaver still turns the display
 off after 5 minutes without a BLE connection.
 
@@ -284,7 +287,8 @@ restart the app. That's app behavior, not a firmware issue.
 ### Device not found in the app
 - Check BLE is enabled on the phone
 - Restart the device
-- Check the serial monitor for errors (the boot log prints the build SHA)
+- Check the serial monitor for errors (the boot log prints the build SHA and
+  the reset reason — handy to tell watchdog/panic resets from button ones)
 
 ### Pump not responding
 - Verify the `pump_id` used at build time — the OLED `Pump ID …` line shows the
@@ -292,7 +296,7 @@ restart the app. That's app behavior, not a firmware issue.
 - Check the frequency (usually 868250000 Hz for EU pumps)
 - Keep the pump within ~1–2 m; watch the `Pump [bar] Ns` line on the screen —
   the bar shows signal strength, the seconds show the last response age
-  (the line blinks when the pump has been silent for over 60 s)
+  (the line blinks when the pump has been silent for over 5 min)
 
 ### Double-RST doesn't enter OTA mode
 - You're pressing too fast: the second press must come **after the screen lights
