@@ -190,9 +190,10 @@ static void oled_draw_status(void) {
 
 	oled_clear();
 
-	// Line 0: name + BLE state
-	snprintf(buf, sizeof(buf), "%s BLE:%s", BLE_NAME,
-		 ble_is_connected() ? "CONNECTED" : "WAITING");
+	// Line 0: name (left) + BLE state (flush right)
+	snprintf(buf, sizeof(buf), "%s%*s", BLE_NAME,
+		 OLED_LINE_CHARS - (int)strlen(BLE_NAME),
+		 ble_is_connected() ? "BLE:CONNECTED" : "BLE:WAITING");
 	oled_text(0, 0, buf);
 	oled_hline(1);
 
