@@ -657,8 +657,8 @@ static void send_and_listen(const uint8_t *buf, int len) {
 	int64_t r0 = esp_timer_get_time();
 	int n = receive(rx_buf.packet, sizeof(rx_buf.packet), p->timeout_ms);
 	int64_t r1 = esp_timer_get_time();
-	ESP_LOGI(TAG, "radio RX: got %d bytes in %lld ms (timeout %lu ms)", n, (long long)((r1 - r0) / 1000), (unsigned long)p->timeout_ms);
 	int rssi = read_rssi();
+	ESP_LOGI(TAG, "radio RX: got %d bytes in %lld ms, rssi %d dBm, freq %lu Hz (timeout %lu ms)", n, (long long)((r1 - r0) / 1000), rssi, (unsigned long)current_frequency, (unsigned long)p->timeout_ms);
 	for (int retries = p->retry_count; retries > 0; retries--) {
 		if (n != 0) {
 			break;

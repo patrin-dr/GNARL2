@@ -14,6 +14,10 @@
 
 #define STATE_OK "OK"
 
+// Diagnostic build: hex dumps of BLE commands and radio packets
+// (activates print_bytes in ble.c). Remove for production builds.
+#define BLE_DEBUG
+
 void gnarl_init(void);
 void start_gnarl_task(void);
 uint32_t gnarl_load_frequency(void);
