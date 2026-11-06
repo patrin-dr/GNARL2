@@ -319,6 +319,7 @@ static int handle_gap_event(struct ble_gap_event *e, void *arg) {
 		connected = false;
 		//led_off();
 		ESP_LOGI(TAG, "disconnected: reason=%d conn_handle=%04X", e->disconnect.reason, connection_handle);
+		gnarl_queue_clear();  // drop stale commands from the dead session
 		advertise();
 		ble_errors = ble_errors + 1;
 		ESP_LOGD(TAG, "disconnect count: %d", ble_errors);
@@ -546,6 +547,7 @@ static int custom_name_access(uint16_t conn_handle, uint16_t attr_handle, struct
 		ESP_LOGE(TAG, "custom_name_access: unknown op %d", ctxt->op);
 		return BLE_ATT_ERR_UNLIKELY;
 	}
+	return 0;
 }
 
 static int firmware_version_access(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg) {
@@ -618,7 +620,7 @@ static int battery_level_access(uint16_t conn_handle, uint16_t attr_handle, stru
 	}
 }
 
-static int no_access(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg) {
+static int no_access(uint16_t conn_handle, uintuint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg) {
 	char u[60];
 	ble_uuid_to_str(ctxt->chr->uuid, u);
 	ESP_LOGE(TAG, "should not happen: op %d, attr handle %04X, uuid %s", ctxt->op, attr_handle, u);

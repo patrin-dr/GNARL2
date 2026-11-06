@@ -620,7 +620,18 @@ static void send_and_listen(const uint8_t *buf, int len) {
 		 len, p->send_channel, p->repeat_count, p->delay_ms);
 	ESP_LOGD(TAG, "send_and_listen: listen_channel %d timeout_ms %lu retry_count %d",
 		 p->listen_channel, (unsigned long)p->timeout_ms, p->retry_count);
-	
+
+	// Clamp listen timeout: AAPS sends wakeup with ~263 s timeout. While the
+	// pump is silent, receive() blocks the gnarl task for the entire timeout,
+	// so a backlog of queued commands (40 slots) could wedge new commands for
+	// hours (observed on 2026-11-06: "cannot queue request", AAPS stuck at
+	// "waking"). An awake pump answers within seconds; cap at 120 s.
+	if (p->timeout_ms > 120000) {
+		ESP_LOGW(TAG, "send_and_listen: listen timeout %lu ms clamped to 120000 ms",
+			 (unsigned long)p->timeout_ms);
+		p->timeout_ms = 120000;
+	}
+
 	// Fix timeout for wakeup commands - iAPS sometimes sends 1ms timeout
 	// DISABLED: Extending timeout causes iAPS client-side timeout error
 	// iAPS expects quick response and has its own retry logic with longer timeouts
@@ -674,7 +685,7 @@ static inline bool valid_frequency(uint32_t f) {
 
 // Change the radio frequency if the current register values make sense.
 static void check_frequency(void) {
-	uint32_t f = ((uint32_t)fr[0] << 16) + ((uint32_t)fr[1] << 8) + ((uint32_t)fr[2]);
+	uint32_t f = ((uint32_t)fr[0] << 16) + ((uint32_t)fr[1] << 8) + fr[2];
 	uint32_t freq = (uint32_t)(((uint64_t)f * 24*MHz) >> 16);
 	if (valid_frequency(freq)) {
 		ESP_LOGI(TAG, "setting frequency to %lu Hz", (unsigned long)freq);
@@ -704,8 +715,8 @@ static void update_register(const uint8_t *buf, int len) {
 		check_frequency();
 		break;
 	default:
-		ESP_LOGD(TAG, "update_register: addr %02X ignored", addr);
-		break;
+			ESP_LOGD(TAG, "update_register: addr %02X ignored", addr);
+			break;
 	}
 	send_code(RESPONSE_CODE_SUCCESS);
 }
@@ -893,7 +904,7 @@ static void gnarl_loop(void *unused) {
 			ESP_LOGI(TAG, "CmdSetSWEncoding");
 			set_sw_encoding(req.data, req.length);
 			break;
-		case CmdResetRadioConfig:
+	case CmdResetRadioConfig:
 			ESP_LOGI(TAG, "CmdResetRadioConfig");
 			send_code(RESPONSE_CODE_SUCCESS);
 			break;
@@ -922,4 +933,14 @@ void start_gnarl_task(void) {
 	// 12 KB stack: rfspy_request_t (~300 B) on stack + deep TX/RX call chain + printf formatting.
 	xTaskCreate(gnarl_loop, "PICKL", 12288, 0, tskIDLE_PRIORITY + 1, 0);
 	ESP_LOGI(TAG, "gnarl task started with priority %d", tskIDLE_PRIORITY + 1);
+}
+
+// Clear the command queue. Called from the BLE layer on disconnect:
+// commands queued by a dead BLE session are useless, and without clearing,
+// long-running backlog commands keep executing after reconnect and the
+// firmware appears dead to the client for hours.
+void gnarl_queue_clear(void) {
+	if (request_queue != NULL) {
+		xQueueReset(request_queue);
+	}
 }
