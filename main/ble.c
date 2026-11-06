@@ -618,9 +618,10 @@ static int battery_level_access(uint16_t conn_handle, uint16_t attr_handle, stru
 		ESP_LOGE(TAG, "battery_level_access: unknown op %d", ctxt->op);
 		return BLE_ATT_ERR_UNLIKELY;
 	}
+	return 0;
 }
 
-static int no_access(uint16_t conn_handle, uintuint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg) {
+static int no_access(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg) {
 	char u[60];
 	ble_uuid_to_str(ctxt->chr->uuid, u);
 	ESP_LOGE(TAG, "should not happen: op %d, attr handle %04X, uuid %s", ctxt->op, attr_handle, u);
