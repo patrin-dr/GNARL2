@@ -350,6 +350,10 @@ typedef void wait_fn_t(int);
 
 static int rx_common(wait_fn_t wait_fn, uint8_t *buf, int count, int timeout) {
 	ESP_LOGD(TAG, "rx: enter (timeout %d ms)", timeout);
+	// One absolute deadline covers sync wait and FIFO read. Counting polling
+	// iterations is not a clock: scheduler delays stretched a 120 s receive to
+	// 160 s and allowed AAPS retries to fill the command queue.
+	const int64_t deadline = esp_timer_get_time() + (int64_t)timeout * MILLISECOND;
 	// Use unlimited length packet format (data sheet section 4.2.13.2).
 	write_register(REG_PACKET_CONFIG_1, PACKET_FORMAT_FIXED);
 	write_register(REG_PAYLOAD_LENGTH, 0);
@@ -361,8 +365,11 @@ static int rx_common(wait_fn_t wait_fn, uint8_t *buf, int count, int timeout) {
 	set_mode_receive();
 	ESP_LOGD(TAG, "rx: RX mode set");
 	if (!packet_seen()) {
-		// Stay in RX mode.
-		wait_fn(timeout);
+		// Stay in RX mode, but never past the command's absolute deadline.
+		int64_t remaining_us = deadline - esp_timer_get_time();
+		if (remaining_us > 0) {
+			wait_fn((int)((remaining_us + MILLISECOND - 1) / MILLISECOND));
+		}
 		ESP_LOGD(TAG, "rx: wait done, sync=%d", packet_seen());
 		if (!packet_seen()) {
 			set_mode_sleep();
@@ -373,16 +380,17 @@ static int rx_common(wait_fn_t wait_fn, uint8_t *buf, int count, int timeout) {
 	ESP_LOGD(TAG, "rx: sync matched");
 	last_rssi = read_register(REG_RSSI);
 
-	// FIFO read with absolute timeout (max 80ms for reading)
+	// FIFO read is capped at 80 ms and at the overall receive deadline.
 	// Medtronic packets are max ~70 bytes @ 16384 bps = ~35ms
-	int64_t fifo_start = esp_timer_get_time();
-	const int64_t FIFO_TIMEOUT_US = 80 * 1000;  // 80ms max
+	int64_t fifo_deadline = esp_timer_get_time() + 80 * MILLISECOND;
+	if (fifo_deadline > deadline) {
+		fifo_deadline = deadline;
+	}
 
 	int n = 0;
 	int w = 0;
 	while (n < count) {
-		// Check absolute timeout first
-		if ((esp_timer_get_time() - fifo_start) > FIFO_TIMEOUT_US) {
+		if (esp_timer_get_time() >= fifo_deadline) {
 			ESP_LOGD(TAG, "FIFO read timeout after %d bytes", n);
 			break;
 		}
@@ -431,12 +439,16 @@ static int rx_common(wait_fn_t wait_fn, uint8_t *buf, int count, int timeout) {
 #define POLL_INTERVAL	500  // microseconds
 
 static void wait_for_packet(int timeout) {
-	int timeout_us = timeout * MILLISECOND;
-	while (!packet_seen() && timeout_us > 0) {
-		usleep(POLL_INTERVAL);
-		timeout_us -= POLL_INTERVAL;
-		// Yield every 10ms to prevent WDT
-		if ((timeout_us % (10 * MILLISECOND)) == 0) {
+	const int64_t deadline = esp_timer_get_time() + (int64_t)timeout * MILLISECOND;
+	int polls = 0;
+	while (!packet_seen()) {
+		int64_t remaining_us = deadline - esp_timer_get_time();
+		if (remaining_us <= 0) {
+			break;
+		}
+		usleep(remaining_us < POLL_INTERVAL ? (useconds_t)remaining_us : POLL_INTERVAL);
+		// Yield every ~10ms to prevent WDT, independently of scheduler delays.
+		if ((++polls % 20) == 0) {
 			taskYIELD();
 		}
 	}

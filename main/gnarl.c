@@ -830,8 +830,17 @@ void rfspy_command(const uint8_t *buf, int count, int rssi) {
 	};
 	memcpy(req.data, buf + 2, req.length);
 	if (!xQueueSend(request_queue, &req, 0)) {
-		ESP_LOGE(TAG, "rfspy_command: cannot queue request for command %d", cmd);
-		return;
+		// AAPS retries commands while a long receive is still running. Once the
+		// queue is full those retries are stale: drop the backlog and keep only
+		// the newest command instead of rejecting it and wedging the session.
+		UBaseType_t dropped = uxQueueMessagesWaiting(request_queue);
+		ESP_LOGW(TAG, "rfspy_command: queue full, dropping %u stale commands; keeping latest command %d",
+			 (unsigned)dropped, cmd);
+		xQueueReset(request_queue);
+		if (!xQueueSend(request_queue, &req, 0)) {
+			ESP_LOGE(TAG, "rfspy_command: cannot queue latest command %d after reset", cmd);
+			return;
+		}
 	}
 	ESP_LOGD(TAG, "rfspy_command %d, queue length %d", cmd, uxQueueMessagesWaiting(request_queue));
 }
